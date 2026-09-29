@@ -67,14 +67,41 @@ def test_history_blocks_a_sustained_pattern_and_approves_a_quiet_one():
     assert decision == "APPROVE"
 
 
-def test_investigate_run_reviews_open_cases():
-    from fastapi.testclient import TestClient
+def _flagged(i, merchant="shop-8"):
+    return {
+        "id": i,
+        "decision": "BLOCK",
+        "score": 0.9,
+        "risk_100": 22,
+        "amount": 100.0,
+        "regime": "ATTACK",
+        "user_token": f"buyer-{i}",
+        "merchant_token": merchant,
+        "reasons": [{"feature": "V12", "text": "component"}],
+    }
 
-    from backend.app.main import app
 
-    headers = {"X-API-Key": "surgeshield-demo"}
+def test_investigate_run_writes_the_history_reason_onto_the_case():
+    from backend.app import main
+
     with TestClient(app) as client:
-        body = client.post("/investigate/run", headers=headers).json()
+        main.engine.reset()
+        for i in range(8):
+            main.engine.history.record(_flagged(i))
+        opened = next(case for case in main.engine.history.list_cases([]) if case["id"] == "merchant-shop-8")
+        assert opened["why"] == "merchant targeted"
+        assert opened["status"] == "OPEN"
+        run = client.post("/investigate/run", headers=HEADERS).json()
+        assert run["summary"]["BLOCK"] >= 1
+        listed = client.get("/cases", headers=HEADERS).json()["cases"]
+    updated = next(case for case in listed if case["id"] == "merchant-shop-8")
+    assert updated["status"] == "DECLINED"
+    assert "8 of 8" in updated["why"]
+
+
+def test_investigate_run_reviews_open_cases():
+    with TestClient(app) as client:
+        body = client.post("/investigate/run", headers=HEADERS).json()
         assert set(body["summary"]) == {"APPROVE", "BLOCK"}
         assert isinstance(body["rows"], list)
     with TestClient(app) as client:

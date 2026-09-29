@@ -36,6 +36,7 @@ train/test.csv
 backend/data/audit.db
 *.pkl
 *.joblib
+!ml/artifacts/*.joblib
 
 # Sensitive
 .env

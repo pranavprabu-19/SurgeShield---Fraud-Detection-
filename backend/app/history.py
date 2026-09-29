@@ -224,6 +224,8 @@ class History:
                 case["actions"].append(entry)
                 if status in CASE_STATUSES:
                     case["status"] = status
+                if action in {"APPROVE", "DECLINE"} and note:
+                    case["why"] = note[:500]
             return {**case, "notes": list(case["notes"]), "actions": list(case["actions"])}
 
     def latest_open_review(self, kind: str, token: str, open_ids: set) -> int | None:
