@@ -10,6 +10,7 @@ export const SCENARIOS = [
   { id: "split_ring", label: "Split ring", key: "9" },
   { id: "mule_fan_in", label: "Mule fan-in", key: "0" },
   { id: "distributed_drain", label: "Distributed drain" },
+  { id: "boundary_probe", label: "Boundary probe" },
 ];
 
 export const SALES = [

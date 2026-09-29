@@ -42,10 +42,14 @@ Simulated rows are badged in the drawer. They are not in the training file, and 
 Press J, or the Jury mode button. Space advances, Backspace goes back, Esc exits. Nine chapters: normal, flash sale, bot ring, attack inside the sale, the new shapes, Big Billion Days in the War Room, a customer case, tamper and kill switch, then the before/after scorecard. If the API is down, the overlay plays the backup video.
 
 ## 1:50 Live
-1. Flash sale. Banner: SURGE. Declines stay near zero.
-2. Bot attack. Banner: ATTACK. Click a row. Read the reason.
-3. Attack inside the sale. Fraud rupees stopped go up. Legitimate rupees declined stay far below the static threshold.
-4. Governance: chain intact, tamper, chain broken at that record, kill switch, payments still flow.
+Run `scripts/reset_demo.sh` before this, or Governance Verify shows the chain that was tampered in testing. Read the numbers on screen. Do not quote a latency, a percentage, or a decision count from memory.
+
+1. Overview. Point at p50 and p99, and at the share of payments with zero friction.
+2. Sale War Room. Press B. The sale goes to SURGE, then its own attack phases latch ATTACK on that segment only. There is no inject button.
+3. Investigate. Click Run the model. It reads each stored history and writes Status and Why. Open cases were repeatedly flagged, so expect declines there, not a quiet approval.
+4. Analytics. Click Replay scenarios. About 10 seconds. The live stream is not reset, and the five-seed report is unchanged.
+5. Sale War Room. Boundary probe. The feed shows how far the risk sits under the block line. The decision stays a step-up.
+6. Governance. Verify, tamper one record, verify again, flip the kill switch. Payments keep flowing. The switch selects the fallback rule. It does not pause the queue, and nothing in the product times that click at 200 ms.
 
 ## Detection matrix
 Five seeds each. "Latch" is the share of runs that entered ATTACK. Baseline is the old geometry-only detector. After is density, graph, sequence, and diversity together. A latch of 0 on the flash sale is the result we want.
@@ -98,3 +102,9 @@ Federated training across issuers. The live token graph already runs on HMAC ids
 - **Model fails.** Kill switch. Rules only. The queue does not stop.
 - **Is the attack fake?** The vectors are real fraud rows from `test.csv`, which the model never trained on, plus tiny noise, sent as a probe-then-drain burst.
 - **Can it run on our data?** `python -m ml.import_dataset --path file.csv` detects IEEE-CIS, PaySim, and Sparkov, or takes `--map` for a custom file. It drops PII and label leaks, splits by time, and the Data page shows which features run on real columns and which are simulated.
+- **Why can only the champion block?** Detectors escalate to step-up. Only the trained model has seen enough data to block without wrecking the false-positive rate. The exception is the kill switch: the fallback rule blocks an amount of ₹2,000 or more, and payments keep flowing.
+- **What happens in a real flash sale?** The regime goes to SURGE and the block cut relaxes for the sale segment. Big Billion Days and the Great Indian Festival are that proof. The attack phases inside those sales tighten only the attacked segment.
+- **How do you handle a new attack?** Replay runs the recorded scenarios. Boundary probe walks the decision edge and stays a step-up. A payment that matches no signal is not blocked by a detector.
+- **Privacy?** Names, streets, jobs, emails, and phone numbers are dropped on import. Cards and VPAs are HMAC-tokenized at scoring and the raw id is not stored. A column with solo AUC above 0.98 is dropped as a leak.
+- **Can a bank integrate this tomorrow?** Copy `sdk/surgeshield_sdk.py`. There is no package to install. Point `SurgeShieldClient` at the API and call `score()`. The README has the gateway hook.
+- **Why are some skills unused?** Those fields are not on a payment row. They stay named so the catalog shows where they would plug in. They are not simulated.

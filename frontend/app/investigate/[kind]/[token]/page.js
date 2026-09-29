@@ -39,6 +39,8 @@ export default function CaseView() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState("");
   const [copilot, setCopilot] = useState("");
+  const [summaryText, setSummaryText] = useState("");
+  const [summarySource, setSummarySource] = useState("");
   const [selectedId, setSelectedId] = useState(null);
 
   const load = useCallback(async () => {
@@ -218,6 +220,27 @@ export default function CaseView() {
               ))}
             </ul>
             {copilot && <p className="mt-3 rounded border border-line p-2 text-xs text-slate-400">{copilot}</p>}
+            <button
+              type="button"
+              className="mt-3 rounded border border-mint px-3 py-1 text-xs text-mint"
+              onClick={async () => {
+                try {
+                  const body = await api(`/cases/${kind}-${token}/summary`, { method: "POST" });
+                  setSummaryText(body.text);
+                  setSummarySource(body.source);
+                } catch (error) {
+                  stream.toast(String(error));
+                }
+              }}
+            >
+              Write AI summary
+            </button>
+            {summaryText && (
+              <p className="mt-2 rounded border border-line p-2 text-xs text-slate-300">
+                {summaryText}
+                <span className="mt-1 block text-[10px] uppercase text-slate-500">{summarySource === "llm" ? "LLM" : "Template"} · does not change the decision</span>
+              </p>
+            )}
             <p className="mt-2 text-[10px] text-slate-600">Insights restate stored reason codes. The model made the decision.</p>
           </Panel>
           <Panel title="Actions">

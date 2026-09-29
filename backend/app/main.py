@@ -98,7 +98,7 @@ class Batch(BaseModel):
 
 class SimulateRequest(BaseModel):
     scenario: str = Field(
-        pattern="^(normal|flash_sale|bot_attack|mixed|noisy_ring|low_and_slow|card_testing|account_takeover|split_ring|mule_fan_in|distributed_drain|big_billion_day|great_indian_festival|replay_real|real_peak)$"
+        pattern="^(normal|flash_sale|bot_attack|mixed|noisy_ring|low_and_slow|card_testing|account_takeover|split_ring|mule_fan_in|distributed_drain|big_billion_day|great_indian_festival|replay_real|real_peak|boundary_probe)$"
     )
     events_per_second: float = Field(default=25, ge=1, le=500)
 
@@ -409,6 +409,14 @@ def entity_lookup(body: LookupRequest):
     return {"kind": body.kind, "token": token, "found": engine.history.known(body.kind, token)}
 
 
+@app.post("/cases/{case_id}/summary")
+def case_summary(case_id: str):
+    try:
+        return engine.case_summary(case_id[:80])
+    except KeyError:
+        raise HTTPException(status_code=404, detail="unknown case")
+
+
 @app.post("/cases/{case_id}/action")
 def case_action(case_id: str, body: CaseAction):
     try:
@@ -422,6 +430,45 @@ def case_action(case_id: str, body: CaseAction):
 @app.get("/fairness")
 def fairness():
     return engine.fairness()
+
+
+_replay_lock = threading.Lock()
+_replay_engine = None
+
+
+@app.post("/redteam/replay")
+def redteam_replay():
+    """Replay the recorded scenarios once on a side engine. Does not touch the live stream."""
+    import tempfile
+
+    from ml.redteam import SCENARIOS, replay as replay_scenario
+
+    global _replay_engine
+    with _replay_lock:
+        if _replay_engine is None:
+            _replay_engine = Engine(artifact_path(), audit_path=tempfile.mktemp(prefix="surgeshield-redteam-", suffix=".db"))
+        started = time.perf_counter()
+        rows = []
+        for name in SCENARIOS:
+            row = replay_scenario(_replay_engine, name, 0)
+            rows.append(
+                {
+                    "scenario": row["scenario"],
+                    "events": row["events"],
+                    "latched": row["detected"],
+                    "detect_seconds": row["detect_seconds"],
+                    "fraud_recall": row["fraud_recall"],
+                    "false_decline_rate": row["false_decline_rate"],
+                    "rupees_leaked_before_latch": row["rupees_leaked_before_latch"],
+                }
+            )
+        elapsed = round(time.perf_counter() - started, 2)
+    return {
+        "scenarios": rows,
+        "elapsed_s": elapsed,
+        "skipped": [],
+        "note": "Each recorded scenario is replayed once. No attacks are invented. The five-seed report is unchanged.",
+    }
 
 
 @app.get("/redteam")

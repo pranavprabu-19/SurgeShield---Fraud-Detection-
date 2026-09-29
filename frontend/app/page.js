@@ -9,6 +9,34 @@ import { ChartBox, Tip, tick } from "../components/charts";
 import { REGIME_COLOR, ScenarioBar, TransactionDrawer } from "../components/console";
 import { DataTable, EmptyState, Gauge, KpiTile, Panel, SeverityBadge, Skeleton, Timeline } from "../components/ui";
 
+const FRICTION = [
+  ["friction_none", "None", "#34d399"],
+  ["friction_device", "Device", "#3ee0c5"],
+  ["friction_push", "Push", "#38bdf8"],
+  ["friction_otp", "OTP", "#fbbf24"],
+  ["friction_auth", "Step-up", "#fb7185"],
+  ["friction_blocked", "Blocked", "#94a3b8"],
+];
+
+function FrictionBar({ totals }) {
+  const parts = FRICTION.map(([key, name, fill]) => ({ name, fill, value: totals[key] || 0 }));
+  const total = parts.reduce((sum, part) => sum + part.value, 0);
+  const quiet = total ? ((parts[0].value / total) * 100).toFixed(0) : "0";
+  return (
+    <div>
+      <p className="text-sm text-slate-300"><span className="num text-ok">{quiet}%</span> of payments had zero friction</p>
+      <div className="mt-2 flex h-3 overflow-hidden rounded bg-white/5">
+        {parts.map((part) => (
+          part.value > 0 ? <div key={part.name} style={{ width: `${(part.value / Math.max(total, 1)) * 100}%`, background: part.fill }} title={`${part.name} ${part.value}`} /> : null
+        ))}
+      </div>
+      <p className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-500">
+        {parts.map((part) => <span key={part.name}>{part.name} <span className="num text-slate-300">{part.value}</span></span>)}
+      </p>
+    </div>
+  );
+}
+
 export default function OverviewPage() {
   const stream = useStream();
   const [buckets, setBuckets] = useState([]);
@@ -103,6 +131,25 @@ export default function OverviewPage() {
           <KpiTile label="Net vs static" value={money(benefit)} hint="Click to compare rupees" />
         </button>
       </section>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Panel title="Friction applied">
+          <FrictionBar totals={totals} />
+          <p className="mt-2 text-xs text-slate-500">
+            Device check and a push are the quieter channels. The rupee comparison still uses the existing OTP catch rate, not a separate rate for each channel.
+          </p>
+        </Panel>
+        <Panel title="Business impact">
+          <ul className="space-y-1 text-sm">
+            <li className="flex justify-between"><span className="text-slate-400">Fraud stopped</span><span className="num">{money(totals.ss_fraud_caught_amt)}</span></li>
+            <li className="flex justify-between"><span className="text-slate-400">Genuine revenue approved</span><span className="num">{money(totals.ss_legit_approved_amt)}</span></li>
+            <li className="flex justify-between"><span className="text-slate-400">Lost to false declines</span><span className="num">{money(totals.ss_legit_blocked_amt)}</span></li>
+            <li className="flex justify-between"><span className="text-slate-400">Customers approved</span><span className="num">{totals.ss_legit_approved_n ?? 0}</span></li>
+            <li className="flex justify-between"><span className="text-slate-400">Customers challenged</span><span className="num">{totals.ss_legit_step_n ?? 0}</span></li>
+          </ul>
+          <p className="mt-2 text-xs text-slate-500">Only payments that carry a fraud label are counted. Unlabeled live rows stay out of these rupees.</p>
+        </Panel>
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Panel title="Detection signals" demo="signals">

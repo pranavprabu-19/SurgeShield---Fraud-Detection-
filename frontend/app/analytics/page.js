@@ -26,6 +26,8 @@ export default function AnalyticsPage() {
   const [metrics, setMetrics] = useState(null);
   const [config, setConfig] = useState(null);
   const [error, setError] = useState("");
+  const [replay, setReplay] = useState(null);
+  const [replaying, setReplaying] = useState(false);
 
   useEffect(() => {
     api("/metrics").then(setMetrics).catch(() => {});
@@ -203,6 +205,64 @@ export default function AnalyticsPage() {
           </ChartBox>
         )}
         <p className="text-xs text-slate-500">Bars are 1 ms wide. The live SLO is 25 ms.</p>
+      </Panel>
+
+      <Panel
+        title="Red team replay"
+        action={
+          <button
+            type="button"
+            className="rounded border border-ember px-3 py-1 text-xs text-ember disabled:opacity-50"
+            disabled={replaying}
+            onClick={async () => {
+              setReplaying(true);
+              setError("");
+              try {
+                setReplay(await api("/redteam/replay", { method: "POST", body: "{}" }));
+              } catch (err) {
+                setError(String(err));
+              } finally {
+                setReplaying(false);
+              }
+            }}
+          >
+            {replaying ? "Replaying…" : "Replay scenarios"}
+          </button>
+        }
+      >
+        <p className="text-xs text-slate-500">
+          Replays each recorded scenario once through the champion. It does not invent attacks, and it does not replace the five-seed report below.
+        </p>
+        {replay?.skipped?.length > 0 && <p className="mt-2 text-xs text-amber">Skipped: {replay.skipped.join(", ")}</p>}
+        {replay?.scenarios?.length > 0 && (
+          <table className="mt-3 w-full text-left text-sm">
+            <thead className="text-[11px] uppercase text-slate-500">
+              <tr>
+                <th className="py-2">Scenario</th>
+                <th>Events</th>
+                <th>Latched</th>
+                <th>Seconds</th>
+                <th>Fraud recall</th>
+                <th>False declines</th>
+                <th>Leaked</th>
+              </tr>
+            </thead>
+            <tbody>
+              {replay.scenarios.map((row) => (
+                <tr key={row.scenario} className="border-t border-line">
+                  <td className="py-1.5">{row.scenario.replaceAll("_", " ")}</td>
+                  <td className="num">{row.events}</td>
+                  <td>{row.latched ? "yes" : "no"}</td>
+                  <td className="num">{row.detect_seconds ?? "—"}</td>
+                  <td className="num">{row.fraud_recall ?? "—"}</td>
+                  <td className="num">{row.false_decline_rate ?? "—"}</td>
+                  <td className="num">{money(row.rupees_leaked_before_latch)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {replay && <p className="mt-2 text-[11px] text-slate-500">{replay.elapsed_s}s · {replay.note}</p>}
       </Panel>
 
       <Panel title="Red team recall">

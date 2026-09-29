@@ -115,9 +115,16 @@ export default function GovernancePage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="Drift (PSI)">
-          <p className={`num text-3xl ${drift?.alert ? "text-ember" : "text-ok"}`}>{drift?.psi ?? 0}</p>
-          <p className="text-xs text-slate-500">{drift?.alert ? "Alert" : "Stable"} · threshold {drift?.threshold}</p>
+        <Panel title="Model health">
+          <p className={`num text-3xl ${drift?.sustained ? "text-ember" : drift?.alert ? "text-amber" : "text-ok"}`}>{drift?.psi ?? 0}</p>
+          <p className="text-xs text-slate-500">
+            {drift?.sustained ? "Sustained drift" : drift?.alert ? "Alert" : "Stable"} · PSI threshold {drift?.threshold} · {drift?.samples ?? 0} scores
+          </p>
+          <p className="mt-2 text-sm text-slate-300">
+            Mean score <span className="num">{drift?.current_mean ?? 0}</span> versus training <span className="num">{drift?.baseline_mean ?? 0}</span>
+            {" "}(shift <span className="num">{drift?.mean_shift ?? 0}</span>)
+          </p>
+          {drift?.suggestion && <p className="mt-2 text-xs text-amber">{drift.suggestion}</p>}
           <div className="mt-3 h-36">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={drift?.history || []}>

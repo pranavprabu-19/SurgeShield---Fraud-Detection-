@@ -46,6 +46,24 @@ def static_decision(score: float, t_static: float) -> str:
     return "BLOCK" if score >= t_static else "APPROVE"
 
 
+def friction_tier(decision: str, score: float, cfg: dict, profile: dict, amount: float, regime: str, attack_hot: bool = False) -> str:
+    """Name the least-disruptive check for a decision that was already made."""
+    del score, cfg
+    if decision == "APPROVE":
+        return "NONE"
+    if decision == "BLOCK":
+        return "BLOCKED"
+    profile = profile or {}
+    if profile.get("device_farm") or profile.get("impossible_travel") or profile.get("model_probe") or (regime == "ATTACK" and attack_hot):
+        return "STEP_UP_AUTH"
+    if float(amount) >= 10_000:
+        return "OTP"
+    known_device = not profile.get("new_user") and not profile.get("device_new")
+    if known_device and regime != "ATTACK":
+        return "DEVICE_CHECK"
+    return "PUSH"
+
+
 def safe_mode_decision(amount: float, night: float, tightness: float, count_60: int) -> str:
     if amount >= 2000 or (night > 0 and amount >= 800 and tightness >= 0.7 and count_60 >= 20):
         return "BLOCK"

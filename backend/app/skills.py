@@ -96,6 +96,14 @@ CATALOG = (
         "action": "Step-up. Card testing still latches ATTACK through the champion and the card-test detector.",
     },
     {
+        "id": "model_probe",
+        "family": "Transactions",
+        "name": "Amounts stepping toward the block line",
+        "status": "live",
+        "sees": "Five or more payments in 10 minutes, each larger than the last, all scored in the band just under the block cut.",
+        "action": "Step-up only. It never blocks, and it does not move the champion score.",
+    },
+    {
         "id": "fund_routing",
         "family": "Transactions",
         "name": "Rapid multi-merchant routing",
@@ -176,6 +184,13 @@ def notes(profile: dict) -> list:
             "direction": "up",
             "text": "a text field contained unexpected syntax and was not executed",
         })
+    if profile.get("model_probe"):
+        out.append({
+            "feature": "model_probe",
+            "shap": 0.4,
+            "direction": "up",
+            "text": "amounts rose on purpose through the band just under the block cut",
+        })
     return out
 
 
@@ -196,6 +211,8 @@ def fired_skills(row: dict) -> list:
         fired.append("amount_spike")
     if profile.get("velocity_burst"):
         fired.append("velocity_burst")
+    if profile.get("model_probe"):
+        fired.append("model_probe")
     if float(detectors.get("fan_out") or 0) >= 0.5 or float(detectors.get("fan_in") or 0) >= 0.45:
         fired.append("fund_routing")
     if profile.get("suspicious_syntax"):
@@ -225,7 +242,7 @@ def judge_history(events: list, summary: dict) -> tuple:
     older_rows = risks[half:] or risks
     older = sum(older_rows) / len(older_rows)
     trend = recent - older
-    attack = {"device_farm", "impossible_travel", "card_test", "fan_out", "fan_in", "geometry", "sequence", "amount_spike", "velocity_burst", "input_syntax"}
+    attack = {"device_farm", "impossible_travel", "card_test", "fan_out", "fan_in", "geometry", "sequence", "amount_spike", "velocity_burst", "input_syntax", "model_probe"}
     attack_hits = sum(1 for event in events for feature in (event.get("features") or []) if feature in attack)
     if rate >= 0.75 and payments >= 3:
         return "BLOCK", f"{flags} of {payments} payments were challenged and the pattern did not ease"

@@ -219,12 +219,27 @@ export default function WarRoomPage() {
           ) : (
             <ul className="max-h-80 space-y-1 overflow-auto text-sm">
               {attacks.map((row) => (
-                <li key={row.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-white/5" onClick={() => setSelected(row)}>
-                  <SeverityBadge value={row.decision} />
-                  <span className="num w-20 text-slate-300">{money(row.amount)}</span>
-                  <span className="w-28 truncate text-xs text-slate-500">{PHASE_LABEL[row.phase] || row.phase || "—"}</span>
-                  <span className="w-20 truncate text-xs text-slate-500">{row.region || "—"}</span>
-                  <span className="flex-1 truncate text-xs text-slate-400">{row.reasons?.[0]?.text || "model score"}</span>
+                <li key={row.id} className="rounded px-2 py-1 hover:bg-white/5">
+                  <div className="flex cursor-pointer items-center gap-2" onClick={() => setSelected(row)}>
+                    <SeverityBadge value={row.decision} />
+                    <span className="num w-20 text-slate-300">{money(row.amount)}</span>
+                    <span className="w-28 truncate text-xs text-slate-500">{PHASE_LABEL[row.phase] || row.phase || "—"}</span>
+                    <span className="w-20 truncate text-xs text-slate-500">{row.region || "—"}</span>
+                    <span className="flex-1 truncate text-xs text-slate-400">{row.reasons?.[0]?.text || "model score"}</span>
+                  </div>
+                  {row.boundary_probe && (
+                    <div className="mt-1 pl-1">
+                      <p className="text-[11px] text-amber">
+                        Amounts stepped to risk {row.boundary_probe.risk_100}, {row.boundary_probe.gap} below the block line. Step-up only.
+                      </p>
+                      <div className="mt-1 h-1.5 w-full rounded bg-white/10">
+                        <div
+                          className="h-full rounded bg-amber"
+                          style={{ width: `${Math.min(100, (row.boundary_probe.risk_100 / Math.max(row.boundary_probe.block_line_100, 1)) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

@@ -9,7 +9,7 @@ import queue
 import threading
 import time
 import warnings
-from collections import deque
+from collections import OrderedDict, deque
 from pathlib import Path
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
@@ -19,7 +19,7 @@ import numpy as np
 
 from backend.app.context import ContextStore
 from backend.app.coordination import analyze
-from backend.app.copilot import explain as copilot_explain
+from backend.app.copilot import explain as copilot_explain, summarize_case
 from backend.app.governance.audit import AuditLog
 from backend.app.governance.drift import histogram, population_stability
 from backend.app.governance.explain import top_reasons
@@ -32,7 +32,7 @@ from backend.app.governance.privacy import tokenize
 from backend.app.profiles import ProfileStore
 from backend.app.surge_context import compose
 from backend.app.graph import analyze_graph
-from backend.app.policy import safe_mode_decision, static_decision, surge_shield_decision
+from backend.app.policy import friction_tier, safe_mode_decision, static_decision, surge_shield_decision
 from backend.app.regime import RegimeDetector
 from ml.schema import (
     ARTIFACT_PATH,
@@ -64,6 +64,14 @@ def _fresh_totals() -> dict:
         "latency_p50": 0.0,
         "latency_p99": 0.0,
         "ss_legit_step_n": 0,
+        "ss_legit_approved_amt": 0.0,
+        "ss_legit_approved_n": 0,
+        "friction_none": 0,
+        "friction_device": 0,
+        "friction_push": 0,
+        "friction_otp": 0,
+        "friction_auth": 0,
+        "friction_blocked": 0,
     }
 
 
@@ -110,7 +118,7 @@ _RECENT_KEYS = (
 
 
 class Engine:
-    def __init__(self, artifact_path=ARTIFACT_PATH):
+    def __init__(self, artifact_path=ARTIFACT_PATH, audit_path=None):
         self.art = joblib.load(artifact_path)
         iforest = self.art.get("iforest")
         if iforest is not None:
@@ -125,16 +133,19 @@ class Engine:
         self.secret = secret
         data_dir = ROOT / "backend" / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
-        audit_path = os.environ.get("SURGESHIELD_AUDIT_PATH", str(data_dir / "audit.db"))
-        self.audit = AuditLog(audit_path, secret)
+        own_audit = audit_path is not None
+        if audit_path is None:
+            audit_path = os.environ.get("SURGESHIELD_AUDIT_PATH", str(data_dir / "audit.db"))
+        self.audit = AuditLog(str(audit_path), secret)
         self.controls_path = data_dir / "controls.json"
         self.safe_mode = False
-        if self.controls_path.exists():
+        if not own_audit and self.controls_path.exists():
             self.safe_mode = bool(json.loads(self.controls_path.read_text()).get("safe_mode", False))
         self.recent_scores: deque = deque(maxlen=400)
         self.latencies: deque = deque(maxlen=800)
         self.recent: deque = deque(maxlen=200)
         self.fingerprints: deque = deque(maxlen=4000)
+        self.probe_ring: OrderedDict = OrderedDict()
         self.totals = _fresh_totals()
         self._seq = 0
         self.buckets: deque = deque(maxlen=180)
@@ -210,6 +221,7 @@ class Engine:
             self.latencies.clear()
             self.recent.clear()
             self.fingerprints.clear()
+            self.probe_ring.clear()
             self.totals = _fresh_totals()
             self.samples.clear()
             self.buckets.clear()
@@ -478,6 +490,8 @@ class Engine:
         prev_regime = self.regime.state
         regime = self.regime.update(snap)
         cfg = self.art["thresholds"]
+        profile["model_probe"] = self._note_probe(user_token, now, amount, float(score), float(cfg["t_block"]))
+        merchant_hot = False
         if self.safe_mode or failed:
             decision = safe_mode_decision(amount, features[self._name_at["night"]], snap["tightness"], snap["count_60"])
             mode = "SAFE_MODE"
@@ -494,7 +508,9 @@ class Engine:
                 merchant_hot=merchant_hot,
                 threshold_offset=offset,
                 human_score=human,
-                context_step_up=bool(profile.get("device_farm") or profile.get("impossible_travel") or skill_step_up(profile)),
+                context_step_up=bool(
+                    profile.get("device_farm") or profile.get("impossible_travel") or profile.get("model_probe") or skill_step_up(profile)
+                ),
             )
             mode = "MODEL"
         if duplicate and decision == "APPROVE":
@@ -503,6 +519,9 @@ class Engine:
         self._note_fairness(txn, decision)
 
         static = static_decision(score, cfg["t_static"])
+        attacked = self.regime.attacked_segment
+        attack_hot = regime == "ATTACK" and (attacked is None or segment == attacked or merchant_hot)
+        friction = friction_tier(decision, score, cfg, profile, amount, regime, attack_hot=attack_hot)
         snap["profile"] = profile
         reasons = self._detector_reasons(snap)
         if explain and decision != "APPROVE":
@@ -510,13 +529,14 @@ class Engine:
 
         latency_ms = (time.perf_counter() - started) * 1000
         self.latencies.append(latency_ms)
-        self._account(decision, static, txn.get("eval_label"), amount)
+        self._account(decision, static, txn.get("eval_label"), amount, friction)
         self._latency_stats()
         self._seq += 1
         self._pending_features[self._seq] = [round(float(v), 5) for v in features]
         result = {
             "id": self._seq,
             "decision": decision,
+            "friction": friction,
             "static_decision": static,
             "score": round(float(score), 5),
             "shadow_score": round(float(shadow), 5),
@@ -557,7 +577,16 @@ class Engine:
             "safe_mode": self.safe_mode or failed,
             "totals": self.totals,
         }
+        if profile.get("model_probe"):
+            block_line = int(round(float(cfg["t_block"]) * 100))
+            result["boundary_probe"] = {
+                "risk_100": result["risk_100"],
+                "block_line_100": block_line,
+                "gap": block_line - result["risk_100"],
+            }
         compact = {k: result[k] for k in _RECENT_KEYS}
+        if "boundary_probe" in result:
+            compact["boundary_probe"] = result["boundary_probe"]
         self.recent.appendleft(compact)
         self._note_sample(compact, latency_ms)
         self._note_bucket(compact, latency_ms)
@@ -1096,6 +1125,7 @@ class Engine:
             profile.get("amount_spike"),
             profile.get("velocity_burst"),
             profile.get("suspicious_syntax"),
+            profile.get("model_probe"),
         ]
         context_value = round(sum(1 for flag in flags if flag) / len(flags), 3)
         if human is None:
@@ -1126,10 +1156,51 @@ class Engine:
         self.fingerprints.append((fingerprint, now))
         return False
 
-    def _account(self, decision: str, static: str, label, amount: float) -> None:
+    def _note_probe(self, user_token: str, now: float, amount: float, score: float, t_block: float) -> bool:
+        """True when one customer walks amounts up through the band just under the block cut."""
+        if not user_token:
+            return False
+        ring = self.probe_ring.get(user_token)
+        if ring is None:
+            if len(self.probe_ring) >= 5_000:
+                self.probe_ring.popitem(last=False)
+            ring = deque(maxlen=6)
+            self.probe_ring[user_token] = ring
+        else:
+            self.probe_ring.move_to_end(user_token)
+        ring.append((now, float(amount), float(score)))
+        window = [row for row in ring if now - row[0] <= 600]
+        if len(window) < 5:
+            return False
+        amounts = [row[1] for row in window]
+        scores = [row[2] for row in window]
+        rising = all(amounts[i] < amounts[i + 1] for i in range(len(amounts) - 1))
+        floor = t_block * 0.75
+        grey = all(floor <= value < t_block for value in scores)
+        return bool(rising and grey)
+
+    def case_summary(self, case_id: str) -> dict:
+        kind, _, token = case_id.partition("-")
+        view = self.entity_view(kind, token)
+        if view is None:
+            raise KeyError(case_id)
+        judgment = judge_history(view["history"], view["summary"])
+        summary = summarize_case(view, judgment)
+        summary["verdict"] = judgment[0]
+        return summary
+
+    def _account(self, decision: str, static: str, label, amount: float, friction: str = "NONE") -> None:
         totals = self.totals
         totals["seen"] += 1
         totals[{"APPROVE": "ss_approve", "STEP_UP": "ss_step", "BLOCK": "ss_block"}[decision]] += 1
+        totals[{
+            "NONE": "friction_none",
+            "DEVICE_CHECK": "friction_device",
+            "PUSH": "friction_push",
+            "OTP": "friction_otp",
+            "STEP_UP_AUTH": "friction_auth",
+            "BLOCKED": "friction_blocked",
+        }[friction]] += 1
         if static == "BLOCK":
             totals["st_block"] += 1
         else:
@@ -1150,6 +1221,9 @@ class Engine:
             else:
                 totals["st_fraud_missed_amt"] += amount
         else:
+            if decision == "APPROVE":
+                totals["ss_legit_approved_amt"] += amount
+                totals["ss_legit_approved_n"] += 1
             if decision == "STEP_UP":
                 totals["ss_legit_step_n"] += 1
             if decision == "BLOCK":
@@ -1464,15 +1538,39 @@ class Engine:
             "step_up_friction": STEP_UP_FRICTION,
         }
 
+    def _training_mean(self) -> float:
+        edges = np.asarray(self.art["psi_edges"], dtype=float)
+        expected = np.asarray(self.art["psi_expected"], dtype=float)
+        total = float(expected.sum()) or 1.0
+        centers = (edges[:-1] + edges[1:]) / 2.0
+        return float(np.sum((expected / total) * centers))
+
     def drift(self) -> dict:
         psi = self._psi()
+        samples = list(self.recent_scores)
+        current = float(np.mean(samples)) if samples else 0.0
+        baseline = self._training_mean()
+        history = list(self.psi_history)
+        sustained = len(history) >= 3 and all(row.get("alert") for row in history[-3:])
+        regime = self.regime.state
+        if sustained and regime == "ATTACK":
+            suggestion = "Scores moved because the stream is in ATTACK. That shift is expected. The kill switch stays manual."
+        elif sustained:
+            suggestion = "Score drift has stayed above 0.2 for three buckets. Consider the kill switch. It does not flip by itself."
+        else:
+            suggestion = ""
         return {
             "psi": round(psi, 4),
             "alert": psi >= 0.2,
-            "samples": len(self.recent_scores),
-            "regime": self.regime.state,
+            "sustained": sustained,
+            "samples": len(samples),
+            "current_mean": round(current, 4),
+            "baseline_mean": round(baseline, 4),
+            "mean_shift": round(current - baseline, 4),
+            "regime": regime,
             "threshold": 0.2,
-            "history": list(self.psi_history),
+            "suggestion": suggestion,
+            "history": history,
         }
 
     def copilot(self, decision: str, regime: str, reasons: list) -> dict:

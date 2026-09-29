@@ -161,7 +161,70 @@ def build_scenario(name: str, seed: int = 42) -> list[dict]:
         return _replay_real(test, limit=1500, span=600.0)
     if name == "real_peak":
         return _real_peak(test, limit=3000)
+    if name == "boundary_probe":
+        return _boundary_probe(legit, test, seed)
     raise ValueError(f"unknown scenario {name}")
+
+
+def _boundary_probe(legit: pd.DataFrame, test: pd.DataFrame, seed: int) -> list:
+    """Quiet buyers, then one customer whose real rows land just under the block cut.
+
+    Candidates are kept only when a private replay of the same prefix scores inside
+    the probe band, so the live replay of this list scores the same way.
+    """
+    import tempfile
+
+    from backend.app.engine import Engine
+    from ml.schema import ARTIFACT_PATH
+
+    rng = np.random.default_rng(seed)
+    sample = legit.sample(n=min(60, len(legit)), random_state=seed)
+    warmup = []
+    for i, (_, row) in enumerate(sample.iterrows()):
+        warmup.append(_row_event(row, 200_000, f"quiet-{i}", f"m-{i % 40}"))
+    warmup = _human(_poisson(warmup, 200_000, 0.5, rng), rng, prefix=f"phone-{seed}")
+    fraud = test[test["Class"] == 1]
+
+    audit = tempfile.mktemp(prefix="surgeshield-probe-", suffix=".db")
+    engine = Engine(ARTIFACT_PATH, audit_path=audit)
+    block = float(engine.art["thresholds"]["t_block"])
+    floor = block * 0.75
+    # A wide gap drops this file's scores out of the band. Ninety seconds keeps
+    # five payments inside the detector's ten-minute window.
+    start = max(event["time"] for event in warmup) + 120.0
+
+    def last_result(events: list) -> dict:
+        engine.reset()
+        result = None
+        for event in events:
+            result = engine.score(event, explain=False)
+        return result or {}
+
+    seeds = []
+    for _, row in fraud.iterrows():
+        event = _row_event(row, start, "boundary-walker", "probe-shop", amount=160.0)
+        result = last_result(warmup + [event])
+        score = float(result.get("score") or 0)
+        if floor <= score < block:
+            seeds.append(row)
+    accepted: list = []
+    amount = 160.0
+    when = start
+    stalled = 0
+    index = 0
+    while seeds and len(accepted) < 6 and stalled < len(seeds):
+        event = _row_event(seeds[index % len(seeds)], when, "boundary-walker", "probe-shop", amount=round(amount, 2))
+        result = last_result(warmup + accepted + [event])
+        score = float(result.get("score") or 0)
+        if floor <= score < block:
+            accepted.append(event)
+            amount += 5.0
+            when += 90.0
+            stalled = 0
+        else:
+            stalled += 1
+        index += 1
+    return warmup + accepted
 
 
 def _stamp(frame: pd.DataFrame, start: float, times) -> list:
