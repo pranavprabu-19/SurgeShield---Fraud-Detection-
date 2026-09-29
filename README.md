@@ -38,7 +38,7 @@ npx next dev -p 3010
 
 Open http://localhost:3010. The demo API key is `surgeshield-demo` (header `X-API-Key`).
 
-Port 8000 on this machine is already taken by another service, so the local demo uses 8010 and 3010. `docker compose` still publishes 8000 and 3000 when those ports are free. Before a jury run, `scripts/reset_demo.sh` deletes the audit database so the chain starts intact.
+Port 8000 on this machine is already taken by another service, so the local demo uses 8010 and 3010. `docker compose` still publishes 8000 and 3000 when those ports are free. Before a jury run, `scripts/reset_demo.sh` restarts the API so the audit chain starts intact.
 
 Or, once the model artifact exists:
 
@@ -50,7 +50,7 @@ The API image needs `libgomp` (installed in the Dockerfile) and `ml/artifacts/su
 
 ## What the jury should click
 
-Run `scripts/reset_demo.sh` first, then start the API. It deletes the audit database so Verify starts on an intact chain. Starting a scenario resets the live stream and the in-memory cases, so run Investigate before Boundary probe.
+Run `scripts/reset_demo.sh` first. It restarts the API so Verify starts on an intact chain. Starting a scenario resets the live stream and the in-memory cases, so run Investigate before Boundary probe.
 
 1. **Overview.** Read the p50 and p99 latency and the share of payments with zero friction. Both are on the page.
 2. **Sale War Room.** Press B. Big Billion Days goes to SURGE, then its own attack phases latch ATTACK on the attacked segment only. Press G for the Great Indian Festival. There is no separate inject button.

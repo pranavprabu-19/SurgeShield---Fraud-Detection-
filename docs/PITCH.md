@@ -42,7 +42,7 @@ Simulated rows are badged in the drawer. They are not in the training file, and 
 Press J, or the Jury mode button. Space advances, Backspace goes back, Esc exits. Nine chapters: normal, flash sale, bot ring, attack inside the sale, the new shapes, Big Billion Days in the War Room, a customer case, tamper and kill switch, then the before/after scorecard. If the API is down, the overlay plays the backup video.
 
 ## 1:50 Live
-Run `scripts/reset_demo.sh` before this, or Governance Verify shows the chain that was tampered in testing. Read the numbers on screen. Do not quote a latency, a percentage, or a decision count from memory.
+Run `scripts/reset_demo.sh` before this. It restarts the API; otherwise Governance Verify shows the chain that was tampered in testing. Read the numbers on screen. Do not quote a latency, a percentage, or a decision count from memory.
 
 1. Overview. Point at p50 and p99, and at the share of payments with zero friction.
 2. Sale War Room. Press B. The sale goes to SURGE, then its own attack phases latch ATTACK on that segment only. There is no inject button.
