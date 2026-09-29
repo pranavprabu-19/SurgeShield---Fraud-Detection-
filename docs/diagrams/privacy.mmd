@@ -1,0 +1,10 @@
+flowchart LR
+    Raw[UserAndMerchantIds] --> Hmac[HMAC_SHA256]
+    Hmac --> Token[TokenOnly]
+    Txn[Transaction] --> Keep[Time_Amount_Segment_Decision]
+    Txn --> Drop[Drop_V1_to_V28_from_audit]
+    Token --> Log[AuditPayload]
+    Keep --> Log
+    Log --> Enc[AES256GCM]
+    Enc --> Chain[HashChain]
+    Chain --> Ttl[RedactAfterTTL]

@@ -1,0 +1,125 @@
+{
+  "seeds": 5,
+  "summary": [
+    {
+      "scenario": "normal",
+      "detected_rate": 0.0,
+      "detect_seconds": null,
+      "rupees_leaked_before_latch": 0.0,
+      "fraud_recall": null,
+      "false_decline_rate": 0.0,
+      "static_false_decline_rate": 0.0,
+      "fraud_rupees_caught": 0.0,
+      "static_fraud_rupees": 0.0,
+      "shadow_block_rate": null
+    },
+    {
+      "scenario": "flash_sale",
+      "detected_rate": 0.0,
+      "detect_seconds": null,
+      "rupees_leaked_before_latch": 0.0,
+      "fraud_recall": null,
+      "false_decline_rate": 0.0,
+      "static_false_decline_rate": 0.0,
+      "fraud_rupees_caught": 0.0,
+      "static_fraud_rupees": 0.0,
+      "shadow_block_rate": null
+    },
+    {
+      "scenario": "bot_attack",
+      "detected_rate": 1.0,
+      "detect_seconds": 4.4,
+      "rupees_leaked_before_latch": 0.0,
+      "fraud_recall": 1.0,
+      "false_decline_rate": null,
+      "static_false_decline_rate": null,
+      "fraud_rupees_caught": 7249.314,
+      "static_fraud_rupees": 7249.314,
+      "shadow_block_rate": null
+    },
+    {
+      "scenario": "mixed",
+      "detected_rate": 0.8,
+      "detect_seconds": 25.445,
+      "rupees_leaked_before_latch": 1254.106,
+      "fraud_recall": 1.0,
+      "false_decline_rate": 0.0,
+      "static_false_decline_rate": 0.0,
+      "fraud_rupees_caught": 5995.206,
+      "static_fraud_rupees": 7249.314,
+      "shadow_block_rate": null
+    },
+    {
+      "scenario": "noisy_ring",
+      "detected_rate": 1.0,
+      "detect_seconds": 4.4,
+      "rupees_leaked_before_latch": 0.0,
+      "fraud_recall": 1.0,
+      "false_decline_rate": null,
+      "static_false_decline_rate": null,
+      "fraud_rupees_caught": 7249.314,
+      "static_fraud_rupees": 7249.314,
+      "shadow_block_rate": null
+    },
+    {
+      "scenario": "low_and_slow",
+      "detected_rate": 0.0,
+      "detect_seconds": null,
+      "rupees_leaked_before_latch": 0.0,
+      "fraud_recall": 1.0,
+      "false_decline_rate": null,
+      "static_false_decline_rate": null,
+      "fraud_rupees_caught": 7249.314,
+      "static_fraud_rupees": 7249.314,
+      "shadow_block_rate": null
+    },
+    {
+      "scenario": "card_testing",
+      "detected_rate": 0.0,
+      "detect_seconds": null,
+      "rupees_leaked_before_latch": 0.0,
+      "fraud_recall": 1.0,
+      "false_decline_rate": null,
+      "static_false_decline_rate": null,
+      "fraud_rupees_caught": 46.746,
+      "static_fraud_rupees": 46.746,
+      "shadow_block_rate": null
+    },
+    {
+      "scenario": "account_takeover",
+      "detected_rate": 0.0,
+      "detect_seconds": null,
+      "rupees_leaked_before_latch": 0.0,
+      "fraud_recall": 1.0,
+      "false_decline_rate": null,
+      "static_false_decline_rate": null,
+      "fraud_rupees_caught": 3834.53,
+      "static_fraud_rupees": 3834.53,
+      "shadow_block_rate": null
+    },
+    {
+      "scenario": "split_ring",
+      "detected_rate": 1.0,
+      "detect_seconds": 4.4,
+      "rupees_leaked_before_latch": 0.0,
+      "fraud_recall": 1.0,
+      "false_decline_rate": null,
+      "static_false_decline_rate": null,
+      "fraud_rupees_caught": 6256.044,
+      "static_fraud_rupees": 6256.044,
+      "shadow_block_rate": null
+    },
+    {
+      "scenario": "mule_fan_in",
+      "detected_rate": 0.0,
+      "detect_seconds": null,
+      "rupees_leaked_before_latch": 0.0,
+      "fraud_recall": 1.0,
+      "false_decline_rate": null,
+      "static_false_decline_rate": null,
+      "fraud_rupees_caught": 8391.1,
+      "static_fraud_rupees": 8391.1,
+      "shadow_block_rate": null
+    }
+  ]
+}

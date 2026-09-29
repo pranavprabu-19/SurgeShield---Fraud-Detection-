@@ -1,0 +1,13 @@
+flowchart LR
+    Txn[IncomingTxn] --> Gate[SchemaGate]
+    Gate --> Score[LightGBM]
+    Gate --> Anomaly[IsolationForest]
+    Gate --> Windows[RollingWindows]
+    Windows --> Coord[Coordination]
+    Score --> Fuse[CalibratedFusion]
+    Anomaly --> Fuse
+    Coord --> Regime[Regime]
+    Fuse --> Policy[ThreeWayPolicy]
+    Regime --> Policy
+    Policy --> Decision[Approve_StepUp_Block]
+    Decision --> Audit[EncryptedHashChain]

@@ -1,0 +1,17 @@
+lightgbm==4.6.0
+scikit-learn==1.6.1
+shap==0.47.2
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+websockets==14.1
+cryptography==44.0.0
+pytest==8.3.4
+httpx==0.28.1
+joblib==1.4.2
+pandas==2.2.3
+numpy==2.0.2
+matplotlib==3.9.4
+slowapi==0.1.9
+locust==2.32.4
+python-multipart==0.0.20
+pydantic==2.10.4

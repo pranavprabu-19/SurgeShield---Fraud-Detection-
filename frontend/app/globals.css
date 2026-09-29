@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: #070b14;
+  color: #e8eef7;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.panel {
+  background: #0d1424;
+  border: 1px solid #1c2740;
+  border-radius: 12px;
+}
+
+.panel-raised {
+  background: #121a2e;
+  border: 1px solid #243352;
+  border-radius: 12px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #243352;
+  border-radius: 8px;
+}
+
+.map-tiles {
+  filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.9);
+}
+
+.leaflet-container .leaflet-control-attribution {
+  background: rgba(11, 18, 32, 0.8);
+  color: #64748b;
+}

@@ -1,0 +1,82 @@
+[
+  {
+    "noise": 0.01,
+    "spacing": 0.22,
+    "detected": true
+  },
+  {
+    "noise": 0.01,
+    "spacing": 1.0,
+    "detected": true
+  },
+  {
+    "noise": 0.01,
+    "spacing": 3.0,
+    "detected": true
+  },
+  {
+    "noise": 0.01,
+    "spacing": 6.0,
+    "detected": true
+  },
+  {
+    "noise": 0.04,
+    "spacing": 0.22,
+    "detected": true
+  },
+  {
+    "noise": 0.04,
+    "spacing": 1.0,
+    "detected": true
+  },
+  {
+    "noise": 0.04,
+    "spacing": 3.0,
+    "detected": true
+  },
+  {
+    "noise": 0.04,
+    "spacing": 6.0,
+    "detected": true
+  },
+  {
+    "noise": 0.08,
+    "spacing": 0.22,
+    "detected": true
+  },
+  {
+    "noise": 0.08,
+    "spacing": 1.0,
+    "detected": true
+  },
+  {
+    "noise": 0.08,
+    "spacing": 3.0,
+    "detected": true
+  },
+  {
+    "noise": 0.08,
+    "spacing": 6.0,
+    "detected": true
+  },
+  {
+    "noise": 0.15,
+    "spacing": 0.22,
+    "detected": true
+  },
+  {
+    "noise": 0.15,
+    "spacing": 1.0,
+    "detected": true
+  },
+  {
+    "noise": 0.15,
+    "spacing": 3.0,
+    "detected": true
+  },
+  {
+    "noise": 0.15,
+    "spacing": 6.0,
+    "detected": true
+  }
+]

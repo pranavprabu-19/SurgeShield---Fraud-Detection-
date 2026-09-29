@@ -1,0 +1,23 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SURGESHIELD_API_KEY: surgeshield-demo
+      SURGESHIELD_SECRET: demo-secret-change-me
+    volumes:
+      - ./backend/data:/app/backend/data
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_API_KEY: surgeshield-demo
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_KEY: surgeshield-demo
+    depends_on:
+      - api

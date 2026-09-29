@@ -1,0 +1,24 @@
+flowchart TB
+    subgraph product [In the product]
+        Registry[ModelRegistry]
+        Kill[KillSwitch]
+        Review[ReviewQueue]
+        Drift[PSIDrift]
+        Shadow[ShadowLogReg]
+    end
+    subgraph privacy [Privacy]
+        Minimize[MinimizeFields]
+        Hmac[HMACTokens]
+        Aes[AES256GCM]
+        Ttl[RetentionRedaction]
+    end
+    subgraph transparency [Transparency]
+        Shap[TreeSHAPReasons]
+        Chain[SHA256Chain]
+        Verify[VerifyEndpoint]
+    end
+    Decision[Decision] --> Shap
+    Decision --> Chain
+    Decision --> Review
+    Chain --> Aes
+    Chain --> Verify
