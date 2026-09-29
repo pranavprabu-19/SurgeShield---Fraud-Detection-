@@ -99,6 +99,17 @@ def test_investigate_run_writes_the_history_reason_onto_the_case():
     assert "8 of 8" in updated["why"]
 
 
+def test_duplicate_step_up_names_the_signal():
+    engine = Engine()
+    first = engine.score(dict(QUIET), explain=False)
+    second = engine.score({**QUIET, "time": 12_001}, explain=False)
+    assert first["decision"] in {"APPROVE", "STEP_UP", "BLOCK"}
+    names = [note["feature"] for note in second["reasons"]]
+    assert second["decision"] in {"STEP_UP", "BLOCK"}
+    assert names
+    assert "duplicate" in names or "model_score" in names
+
+
 def test_investigate_run_reviews_open_cases():
     with TestClient(app) as client:
         body = client.post("/investigate/run", headers=HEADERS).json()

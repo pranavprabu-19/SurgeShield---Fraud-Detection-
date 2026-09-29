@@ -13,7 +13,7 @@ if [ -n "$PIDS" ]; then
   sleep 0.4
 fi
 
-rm -f "$ROOT/backend/data/audit.db"
+rm -f "$ROOT/backend/data/audit.db" "$ROOT/backend/data/history.db"
 mkdir -p "$ROOT/backend/data"
 nohup env -u SURGESHIELD_DATASET PYTHONPATH=. .venv/bin/uvicorn backend.app.main:app \
   --host 127.0.0.1 --port 8010 --loop asyncio --http h11 \

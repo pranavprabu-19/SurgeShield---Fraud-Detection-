@@ -34,6 +34,7 @@ data/*/test.csv
 train/train.csv
 train/test.csv
 backend/data/audit.db
+backend/data/history.db
 backend/data/api.log
 *.pkl
 *.joblib

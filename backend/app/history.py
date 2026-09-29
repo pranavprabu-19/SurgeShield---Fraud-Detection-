@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import sqlite3
 import threading
 import time
 from collections import Counter, OrderedDict, deque
@@ -48,6 +50,68 @@ class History:
                 store.clear()
             self.cases.clear()
 
+    def save(self, path: str) -> None:
+        with self._lock:
+            entities = []
+            for kind, store in self.stores.items():
+                _, depth = self.limits[kind]
+                for token, row in store.items():
+                    entities.append((kind, token, json.dumps({
+                        "events": list(row["events"]),
+                        "n": row["n"],
+                        "flags": row["flags"],
+                        "amount": row["amount"],
+                        "blocked": row["blocked"],
+                        "first_t": row["first_t"],
+                        "features": dict(row["features"]),
+                        "depth": depth,
+                    })))
+            cases = [(case_id, json.dumps(case)) for case_id, case in self.cases.items()]
+        conn = sqlite3.connect(path)
+        try:
+            conn.execute("create table if not exists entities (kind text, token text, body text, primary key (kind, token))")
+            conn.execute("create table if not exists cases (id text primary key, body text)")
+            conn.execute("delete from entities")
+            conn.execute("delete from cases")
+            conn.executemany("insert into entities (kind, token, body) values (?, ?, ?)", entities)
+            conn.executemany("insert into cases (id, body) values (?, ?)", cases)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def load(self, path: str) -> None:
+        conn = sqlite3.connect(path)
+        try:
+            conn.execute("create table if not exists entities (kind text, token text, body text, primary key (kind, token))")
+            conn.execute("create table if not exists cases (id text primary key, body text)")
+            entities = conn.execute("select kind, token, body from entities").fetchall()
+            cases = conn.execute("select id, body from cases").fetchall()
+        finally:
+            conn.close()
+        with self._lock:
+            for store in self.stores.values():
+                store.clear()
+            self.cases.clear()
+            for kind, token, body in entities:
+                if kind not in self.stores:
+                    continue
+                raw = json.loads(body)
+                _, depth = self.limits[kind]
+                events = deque(maxlen=int(raw.get("depth") or depth))
+                for event in reversed(raw.get("events") or []):
+                    events.appendleft(event)
+                self.stores[kind][token] = {
+                    "events": events,
+                    "n": int(raw.get("n") or 0),
+                    "flags": int(raw.get("flags") or 0),
+                    "amount": float(raw.get("amount") or 0),
+                    "blocked": float(raw.get("blocked") or 0),
+                    "first_t": float(raw.get("first_t") or time.time()),
+                    "features": Counter(raw.get("features") or {}),
+                }
+            for case_id, body in cases:
+                self.cases[case_id] = json.loads(body)
+
     def _row(self, kind: str, token: str) -> dict:
         store = self.stores[kind]
         limit, depth = self.limits[kind]
@@ -81,6 +145,8 @@ class History:
                     row["blocked"] += float(event["amount"])
                 if kind == "user" and row["flags"] >= CASE_FLAGS:
                     self._open_case(kind, token, "repeated flags")
+                elif kind == "user" and result.get("from_csv") and flagged:
+                    self._open_case(kind, token, "challenged CSV row")
                 elif kind == "merchant" and row["flags"] >= 5 and row["flags"] >= 0.2 * row["n"]:
                     self._open_case(kind, token, "merchant targeted")
 

@@ -57,7 +57,7 @@ def test_device_farm_and_travel_chips_fire_on_attacks_only(big_billion_day):
     fired = Counter()
     for event, result in rows:
         for note in result["reasons"]:
-            if note["feature"] in {"device_farm", "impossible_travel"}:
+            if note["feature"] in {"device_farm", "impossible_travel", "wormhole"}:
                 fired[(note["feature"], event["phase"] in ATTACK_PHASES)] += 1
     assert fired[("device_farm", True)] > 0
     assert fired[("impossible_travel", True)] > 0

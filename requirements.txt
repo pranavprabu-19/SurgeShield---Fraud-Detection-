@@ -1,4 +1,5 @@
 lightgbm==4.6.0
+xgboost==2.1.4
 scikit-learn==1.6.1
 shap==0.47.2
 fastapi==0.115.6

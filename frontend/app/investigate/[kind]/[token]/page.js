@@ -339,7 +339,9 @@ export default function CaseView() {
                     <td className="num text-xs">{shortToken(kind === "user" ? event.merchant_token : event.user_token)}</td>
                     <td className="text-xs">{event.region || "—"}</td>
                     <td className="text-xs text-slate-400">{PHASE_LABEL[event.phase] || event.phase || "—"}</td>
-                    <td className="max-w-[260px] truncate text-xs text-slate-400">{event.reasons?.[0] || "—"}</td>
+                    <td className="max-w-[260px] truncate text-xs text-slate-400" title={(event.reasons || []).join(" · ")}>
+                      {(event.features || []).filter(Boolean).join(", ") || "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

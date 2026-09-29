@@ -3,13 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../../lib/api";
+import { LivePayments, ModelCompare } from "../../components/compare";
 import { Panel, Skeleton } from "../../components/ui";
+import { useStream } from "../../lib/stream";
 
 export default function ModelPage() {
+  const stream = useStream();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [bench, setBench] = useState(null);
   const [cut, setCut] = useState(0.2);
+  const [picked, setPicked] = useState(null);
 
   useEffect(() => {
     api("/metrics").then((body) => {
@@ -125,18 +129,138 @@ export default function ModelPage() {
           Offline test cost is not a flash sale. SurgeShield {data.test_cost_surgeshield?.total_cost?.toFixed(0)} versus static {data.test_cost_static?.total_cost?.toFixed(0)}. The rupee gap shows up in the simulator.
         </p>
       </Panel>
+      <ModelCompare selected={picked || stream.feed[0]} />
+      <Panel title="Last 20 scored">
+        <p className="mb-2 text-xs text-slate-500">From the live socket. Held-out curves above do not move with this list.</p>
+        <LivePayments rows={stream.feed} onPick={setPicked} empty="No payments yet. Run a sale or upload a file." />
+      </Panel>
+      <TaxonomyPanel />
       <SkillsPanel />
       <AdaptPanel />
     </div>
   );
 }
 
+const GROUPS = ["Anomaly types", "Entry", "Identity", "Persistence", "Infrastructure", "Fraud", "Insider", "Physical", "Impact"];
+const BADGE = {
+  live: "bg-mint/15 text-mint",
+  partial: "bg-amber/15 text-amber",
+  "needs data": "bg-white/5 text-slate-400",
+};
+
+function CoverageRow({ item }) {
+  return (
+    <li className="border-t border-white/5 py-2">
+      <div className="flex items-center gap-2">
+        <span className={`rounded px-1.5 py-0.5 text-[10px] uppercase ${BADGE[item.status] || BADGE["needs data"]}`}>{item.status}</span>
+        <span className="text-sm">{item.name}</span>
+      </div>
+      <p className="mt-1 text-xs text-slate-400">{item.basis}</p>
+      {item.file && item.status === "needs data" && <p className="mt-1 text-xs text-slate-500">{item.file}</p>}
+    </li>
+  );
+}
+
+function TaxonomyPanel() {
+  const [body, setBody] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [openHidden, setOpenHidden] = useState({});
+  useEffect(() => {
+    api("/taxonomy").then(setBody).catch(() => {});
+  }, []);
+  const counts = body?.counts || {};
+  const needle = query.trim().toLowerCase();
+  const items = (body?.items || []).filter((item) => {
+    if (filter !== "all" && item.status !== filter) return false;
+    if (!needle) return true;
+    return `${item.name} ${item.basis} ${item.file || ""}`.toLowerCase().includes(needle);
+  });
+  const tiles = [
+    ["live", "Live", counts.live || 0],
+    ["partial", "Partial", counts.partial || 0],
+    ["needs data", "Needs data", counts["needs data"] || 0],
+  ];
+  return (
+    <Panel title="Coverage">
+      <p className="text-sm text-slate-400">{body?.note}</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {tiles.map(([status, label, count]) => (
+          <button key={status} type="button" onClick={() => setFilter(filter === status ? "all" : status)} className={`rounded border px-3 py-2 text-left ${filter === status ? "border-mint" : "border-line"}`}>
+            <p className="num text-2xl">{count}</p>
+            <p className="text-xs uppercase text-slate-500">{label}</p>
+          </button>
+        ))}
+      </div>
+      <input
+        className="mt-3 w-full rounded border border-line bg-transparent px-3 py-2 text-sm"
+        placeholder="Search coverage"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <div className="mt-3 max-h-[32rem] space-y-3 overflow-auto">
+        {GROUPS.map((group) => {
+          const rows = items.filter((item) => item.group === group);
+          if (!rows.length) return null;
+          const hidden = rows.filter((item) => item.status === "needs data");
+          const shown = filter === "needs data" ? rows : rows.filter((item) => item.status !== "needs data");
+          const bar = ["live", "partial", "needs data"].map((status) => rows.filter((item) => item.status === status).length);
+          return (
+            <div key={group} className="rounded border border-line p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm">{group}</p>
+                <p className="text-[11px] text-slate-500">{bar[0]} live · {bar[1]} partial · {bar[2]} needs data</p>
+              </div>
+              <div className="mt-2 flex h-1.5 overflow-hidden rounded bg-white/5">
+                <div className="bg-mint" style={{ width: `${rows.length ? (bar[0] / rows.length) * 100 : 0}%` }} />
+                <div className="bg-amber" style={{ width: `${rows.length ? (bar[1] / rows.length) * 100 : 0}%` }} />
+                <div className="bg-slate-600" style={{ width: `${rows.length ? (bar[2] / rows.length) * 100 : 0}%` }} />
+              </div>
+              <ul>{shown.map((item) => <CoverageRow key={item.name} item={item} />)}</ul>
+              {filter !== "needs data" && hidden.length > 0 && (
+                <div className="mt-2">
+                  <button type="button" className="text-xs text-slate-400" onClick={() => setOpenHidden((prev) => ({ ...prev, [group]: !prev[group] }))}>
+                    {openHidden[group] ? "Hide" : "Show"} what this stream cannot see ({hidden.length})
+                  </button>
+                  {openHidden[group] && <ul>{hidden.map((item) => <CoverageRow key={item.name} item={item} />)}</ul>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
+const SKILL_FLAG = {
+  ood: "ood",
+  topology: "topology",
+  wormhole: "wormhole",
+  model_probe: "model_probe",
+  amount_spike: "amount_spike",
+  velocity_burst: "velocity_burst",
+  auth_flood: "auth_flood",
+  input_syntax: "suspicious_syntax",
+};
+
 function SkillsPanel() {
+  const stream = useStream();
   const [body, setBody] = useState(null);
   useEffect(() => {
     api("/skills").then(setBody).catch(() => {});
   }, []);
   const skills = body?.skills || [];
+  const fires = {};
+  stream.feed.forEach((row) => {
+    const profile = row.profile || {};
+    Object.entries(SKILL_FLAG).forEach(([skill, flag]) => {
+      if (profile[flag]) fires[skill] = (fires[skill] || 0) + 1;
+    });
+    if (profile.device_farm || profile.impossible_travel || profile.device_new || profile.hour_unusual) {
+      fires.login_context = (fires.login_context || 0) + 1;
+    }
+  });
   const families = [...new Set(skills.map((skill) => skill.family))];
   return (
     <Panel title="Anomaly skills">
@@ -148,7 +272,7 @@ function SkillsPanel() {
             {skills.filter((skill) => skill.family === family).map((skill) => (
               <li key={skill.id} className="grid gap-1 border-t border-white/5 pt-2 md:grid-cols-[12rem_6rem_1fr]">
                 <span>{skill.name}</span>
-                <span className={skill.status === "unavailable" ? "text-slate-500" : "text-mint"}>{skill.status}</span>
+                <span className={skill.status === "unavailable" ? "text-slate-500" : "text-mint"}>{skill.status}{fires[skill.id] ? ` · ${fires[skill.id]} live` : ""}</span>
                 <span className="text-slate-400">{skill.sees} {skill.action}</span>
               </li>
             ))}

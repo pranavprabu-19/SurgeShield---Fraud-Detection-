@@ -24,17 +24,19 @@ from backend.app.governance.audit import AuditLog
 from backend.app.governance.drift import histogram, population_stability
 from backend.app.governance.explain import top_reasons
 from backend.app.behavior import human_score
-from backend.app.geo import locate
+from backend.app.geo import haversine_km, locate
 from backend.app.skills import judge_history, mark, mark_velocity, notes as skill_notes, step_up as skill_step_up
 from backend.app.history import History
 from backend.app.sales import SALE_EVENTS
 from backend.app.governance.privacy import tokenize
+from backend.app.logsignals import load as load_logs, login_hot, summary as log_summary
 from backend.app.profiles import ProfileStore
 from backend.app.surge_context import compose
 from backend.app.graph import analyze_graph
 from backend.app.policy import friction_tier, safe_mode_decision, static_decision, surge_shield_decision
 from backend.app.regime import RegimeDetector
 from ml.schema import (
+    ARTIFACT_DIR,
     ARTIFACT_PATH,
     FEATURE_NAMES,
     ROOT,
@@ -43,6 +45,27 @@ from ml.schema import (
     TIGHT_DIMS,
     V_COLS,
 )
+
+
+_FALLBACK_PAYMENT = None
+
+
+def _fallback_payment() -> dict:
+    """One real held-out row, used only when the live stream has nothing to morph."""
+    global _FALLBACK_PAYMENT
+    if _FALLBACK_PAYMENT is None:
+        from backend.app.scenarios import _row_event
+        from ml.datasets import active_spec, data_paths, load_canonical
+
+        _, test_path = data_paths()
+        frame = load_canonical(test_path, active_spec())
+        row = frame.iloc[len(frame) // 2]
+        event = _row_event(row, float(min(float(row["Time"]), 200_000.0)), "held-out-user", "held-out-merchant")
+        event["eval_label"] = None
+        _FALLBACK_PAYMENT = event
+    copy = dict(_FALLBACK_PAYMENT)
+    copy["v"] = list(_FALLBACK_PAYMENT["v"])
+    return copy
 
 
 def _fresh_totals() -> dict:
@@ -114,11 +137,14 @@ _RECENT_KEYS = (
     "geo_source",
     "device_token",
     "category",
+    "synthesized",
+    "signals",
+    "from_csv",
 )
 
 
 class Engine:
-    def __init__(self, artifact_path=ARTIFACT_PATH, audit_path=None):
+    def __init__(self, artifact_path=ARTIFACT_PATH, audit_path=None, persist_history=False):
         self.art = joblib.load(artifact_path)
         iforest = self.art.get("iforest")
         if iforest is not None:
@@ -126,6 +152,8 @@ class Engine:
         self.ctx = ContextStore()
         self.profiles = ProfileStore()
         self.history = History()
+        self._persist_history = persist_history
+        self._history_stop = threading.Event()
         self.phase_stats: dict = {}
         self.flash_merchants = []
         self.regime = RegimeDetector()
@@ -137,13 +165,30 @@ class Engine:
         if audit_path is None:
             audit_path = os.environ.get("SURGESHIELD_AUDIT_PATH", str(data_dir / "audit.db"))
         self.audit = AuditLog(str(audit_path), secret)
+        self.history_path = os.environ.get("SURGESHIELD_HISTORY_PATH", str(data_dir / "history.db"))
+        if persist_history:
+            self.history.load(self.history_path)
+            self._history_thread = threading.Thread(target=self._history_loop, daemon=True)
+            self._history_thread.start()
         self.controls_path = data_dir / "controls.json"
         self.safe_mode = False
         if not own_audit and self.controls_path.exists():
             self.safe_mode = bool(json.loads(self.controls_path.read_text()).get("safe_mode", False))
         self.recent_scores: deque = deque(maxlen=400)
+        self._corr_rows: deque = deque(maxlen=400)
+        self._minute_by_seg: dict = {}
+        baseline_file = ARTIFACT_DIR / "baselines.json"
+        self.baselines = json.loads(baseline_file.read_text()) if baseline_file.exists() else {}
+        self._corr_idx = []
+        for name in self.baselines.get("correlation_columns") or []:
+            if name == "Amount":
+                self._corr_idx.append(-1)
+            elif name.startswith("V"):
+                self._corr_idx.append(int(name[1:]) - 1)
+        load_logs()
         self.latencies: deque = deque(maxlen=800)
         self.recent: deque = deque(maxlen=200)
+        self._sources: OrderedDict = OrderedDict()
         self.fingerprints: deque = deque(maxlen=4000)
         self.probe_ring: OrderedDict = OrderedDict()
         self.totals = _fresh_totals()
@@ -202,6 +247,16 @@ class Engine:
             except Exception:
                 continue
 
+    def _history_loop(self) -> None:
+        while not self._history_stop.wait(10):
+            self.history.save(self.history_path)
+
+    def close_history(self) -> None:
+        if not self._persist_history:
+            return
+        self._history_stop.set()
+        self.history.save(self.history_path)
+
     def reset(self) -> None:
         with self.lock:
             if self.scenario not in {"", "idle"} and self.totals["seen"]:
@@ -214,12 +269,17 @@ class Engine:
             self.ctx.reset()
             self.profiles.reset()
             self.history.reset()
+            if self._persist_history:
+                self.history.save(self.history_path)
             self.phase_stats = {}
             self.flash_merchants = []
             self.regime.reset()
             self.recent_scores.clear()
+            self._corr_rows.clear()
+            self._minute_by_seg.clear()
             self.latencies.clear()
             self.recent.clear()
+            self._sources.clear()
             self.fingerprints.clear()
             self.probe_ring.clear()
             self.totals = _fresh_totals()
@@ -406,6 +466,7 @@ class Engine:
         hour = int((now // 3600.0) % 24)
         velocity = 1
         sharing = {user_token} if device_token else None
+        wormhole_km = 0.0
         for row in recent:
             age = now - row["time"]
             if age < 0 or age > 300.0:
@@ -414,6 +475,15 @@ class Engine:
                 velocity += 1
             if sharing is not None and row.get("device") == device_token:
                 sharing.add(row.get("user"))
+                if (
+                    age <= 60.0
+                    and row.get("user") not in {user_token, "", None}
+                    and lat is not None
+                    and row.get("lat") is not None
+                ):
+                    gap = haversine_km(lat, lon, row["lat"], row["lon"])
+                    if gap >= 300:
+                        wormhole_km = max(wormhole_km, gap)
         profile = self.profiles.signals(
             user_token,
             merchant_token,
@@ -432,6 +502,22 @@ class Engine:
             sharing.discard(None)
             profile["device_users"] = len(sharing)
             profile["device_farm"] = len(sharing) >= 4
+        profile["wormhole"] = wormhole_km >= 300
+        profile["wormhole_km"] = round(wormhole_km, 1)
+        profile["wormhole_simulated"] = geo_source != "real"
+        cuts = self.baselines.get("ood_distance") or []
+        profile["ood"] = bool(cuts and segment < len(cuts) and dist > float(cuts[segment]))
+        shops = set()
+        dense = False
+        for row in recent:
+            merchant = row.get("merchant")
+            if merchant:
+                shops.add(merchant)
+                if len(shops) > 2:
+                    dense = True
+                    break
+        profile["topology"] = False if dense else self._topology(recent, now, user_token, merchant_token, device_token)
+        profile["auth_flood"] = bool(user_token and login_hot(user_token))
         mark(profile, txn)
         mark_velocity(profile, velocity)
         features = self._vector(txn, segment, dist, amt_z, counts, graph, profile)
@@ -447,6 +533,8 @@ class Engine:
         snapshot_event = ContextStore.snapshot(txn, segment, user_token, merchant_token)
         snapshot_event["risk"] = float(score)
         snapshot_event["device"] = device_token
+        snapshot_event["lat"] = lat
+        snapshot_event["lon"] = lon
         self.ctx.add(snapshot_event)
         tail = self.ctx.tail(96)
         ramp = counts[0] * 6.0 / max(counts[1], 1)
@@ -486,8 +574,12 @@ class Engine:
             profile=profile,
         )
         self.recent_scores.append(float(score))
+        self._note_stream(now, segment, amount, txn)
         snap["psi"] = self._psi()
         prev_regime = self.regime.state
+        if float(snap.get("vol_z") or 0) >= 2.5 and float(snap.get("diversity") or 1) < 0.35 and self._volatility_high(segment, now):
+            snap["suspicious"] = True
+            snap["volatility_high"] = True
         regime = self.regime.update(snap)
         cfg = self.art["thresholds"]
         profile["model_probe"] = self._note_probe(user_token, now, amount, float(score), float(cfg["t_block"]))
@@ -509,12 +601,14 @@ class Engine:
                 threshold_offset=offset,
                 human_score=human,
                 context_step_up=bool(
-                    profile.get("device_farm") or profile.get("impossible_travel") or profile.get("model_probe") or skill_step_up(profile)
+                    profile.get("device_farm") or profile.get("impossible_travel") or profile.get("wormhole") or profile.get("ood") or profile.get("auth_flood") or profile.get("model_probe") or skill_step_up(profile)
                 ),
             )
             mode = "MODEL"
+        stepped_for_duplicate = False
         if duplicate and decision == "APPROVE":
             decision = "STEP_UP"
+            stepped_for_duplicate = True
         self._note_story(now, decision, prev_regime, regime, amount, txn.get("eval_label"))
         self._note_fairness(txn, decision)
 
@@ -526,6 +620,20 @@ class Engine:
         reasons = self._detector_reasons(snap)
         if explain and decision != "APPROVE":
             reasons = reasons + self._reasons(features)
+        if stepped_for_duplicate and not any(note.get("feature") == "duplicate" for note in reasons):
+            reasons.append({
+                "feature": "duplicate",
+                "shap": 0.1,
+                "direction": "up",
+                "text": "same payment seen again in this window",
+            })
+        if decision in {"BLOCK", "STEP_UP"} and not reasons:
+            reasons.append({
+                "feature": "model_score",
+                "shap": round(float(score), 5),
+                "direction": "up",
+                "text": "champion score",
+            })
 
         latency_ms = (time.perf_counter() - started) * 1000
         self.latencies.append(latency_ms)
@@ -571,6 +679,12 @@ class Engine:
             "geo_source": geo_source,
             "device_token": device_token,
             "category": txn.get("category") or "",
+            "synthesized": bool(txn.get("synthesized")),
+            "from_csv": bool(txn.get("from_csv")),
+            "signals": {
+                "Amount": round(float(amount), 4),
+                "V14": round(float(vector_in[13]), 4) if len(vector_in) > 13 else None,
+            },
             "latency_ms": round(latency_ms, 3),
             "eval_label": txn.get("eval_label"),
             "scenario": self.scenario,
@@ -587,6 +701,7 @@ class Engine:
         compact = {k: result[k] for k in _RECENT_KEYS}
         if "boundary_probe" in result:
             compact["boundary_probe"] = result["boundary_probe"]
+        self._remember_source(self._seq, txn)
         self.recent.appendleft(compact)
         self._note_sample(compact, latency_ms)
         self._note_bucket(compact, latency_ms)
@@ -1055,6 +1170,20 @@ class Engine:
                 "direction": "up",
                 "text": f"{profile.get('device_users')} accounts on one device in 5 minutes",
             })
+        if profile.get("wormhole"):
+            simulated = " Simulated location." if profile.get("wormhole_simulated") else ""
+            notes.append({
+                "feature": "wormhole",
+                "shap": profile.get("wormhole_km") or 0,
+                "direction": "up",
+                "text": f"one device paid {int(profile.get('wormhole_km') or 0)} km apart within a minute, under two accounts.{simulated} Step-up only.",
+            })
+        if profile.get("ood"):
+            notes.append({"feature": "ood", "shap": 0.1, "direction": "up", "text": "this payment sits past the training distance for its segment. Step-up only."})
+        if profile.get("topology"):
+            notes.append({"feature": "topology", "shap": 0.1, "direction": "up", "text": "a tight group of repeat payers is sharing at most two merchants. Note only, not a step-up."})
+        if profile.get("auth_flood"):
+            notes.append({"feature": "auth_flood", "shap": 0.1, "direction": "up", "text": "this account had 10 or more failed logins in 10 minutes. Step-up only."})
         if profile.get("impossible_travel"):
             notes.append({
                 "feature": "impossible_travel",
@@ -1122,6 +1251,10 @@ class Engine:
             float(profile.get("velocity_vs_max") or 0) >= 2,
             profile.get("device_farm"),
             profile.get("impossible_travel"),
+            profile.get("wormhole"),
+            profile.get("ood"),
+            profile.get("topology"),
+            profile.get("auth_flood"),
             profile.get("amount_spike"),
             profile.get("velocity_burst"),
             profile.get("suspicious_syntax"),
@@ -1545,6 +1678,115 @@ class Engine:
         centers = (edges[:-1] + edges[1:]) / 2.0
         return float(np.sum((expected / total) * centers))
 
+    def _note_stream(self, now: float, segment: int, amount: float, txn: dict) -> None:
+        bucket = self._minute_by_seg.setdefault(int(segment), deque())
+        bucket.append((float(now), float(amount)))
+        while bucket and now - bucket[0][0] > 60:
+            bucket.popleft()
+        if not self._corr_idx:
+            return
+        values = txn.get("v") or []
+        self._corr_rows.append([
+            float(txn.get("amount") or 0.0) if index < 0 else (float(values[index]) if index < len(values) else 0.0)
+            for index in self._corr_idx
+        ])
+
+    def _volatility_high(self, segment: int, now: float) -> bool:
+        cuts = self.baselines.get("volatility_std") or []
+        if segment >= len(cuts) or float(cuts[segment]) <= 0:
+            return False
+        bucket = self._minute_by_seg.get(int(segment))
+        if not bucket or len(bucket) < 8:
+            return False
+        return float(np.std([amt for stamp, amt in bucket if now - stamp <= 60])) > 3.0 * float(cuts[segment])
+
+    def _topology(self, recent, now: float, user, merchant, device) -> bool:
+        if not user or len(recent) < 10:
+            return False
+        window = [row for row in recent if now - float(row.get("time") or now) <= 300]
+        if len(window) < 10:
+            return False
+        window.append({"user": user, "merchant": merchant, "device": device})
+        shops = {row.get("merchant") for row in window if row.get("merchant")}
+        if len(shops) > 2:
+            return False
+        people = {row.get("user") for row in window if row.get("user")}
+        devices = {row.get("device") for row in window if row.get("device")}
+        if len(people) + len(shops) + len(devices) < 12:
+            return False
+        touches = sum(1 for row in window if row.get("user"))
+        return touches >= max(len(people), 1) * 2
+
+    def _correlation_shift(self) -> float | None:
+        base = self.baselines.get("correlation")
+        if not base or len(self._corr_rows) < 40:
+            return None
+        current = np.corrcoef(np.asarray(self._corr_rows, dtype=float).T)
+        delta = np.abs(current - np.asarray(base, dtype=float))
+        np.fill_diagonal(delta, 0.0)
+        if not np.isfinite(delta).any():
+            return None
+        return float(np.nanmax(delta))
+
+    def _remember_source(self, seq: int, txn: dict) -> None:
+        values = txn.get("v") or []
+        self._sources[int(seq)] = {
+            "time": float(txn.get("time") or 0),
+            "amount": float(txn.get("amount") or 0),
+            "v": [float(value) for value in list(values)[:28]],
+            "user_id": txn.get("user_id"),
+            "merchant_id": txn.get("merchant_id"),
+            "device": txn.get("device"),
+            "region": txn.get("region"),
+            "category": txn.get("category"),
+            "lat": txn.get("lat"),
+            "lon": txn.get("lon"),
+            "eval_label": txn.get("eval_label"),
+        }
+        while len(self._sources) > 200:
+            self._sources.popitem(last=False)
+
+    def synthesize(self, source_id: int | None = None, amount_scale: float = 1.0, v_shift: dict | None = None, copies: int = 1) -> dict:
+        """Re-score a real row after a small change. Does not retrain or write training files."""
+        with self.lock:
+            if source_id is not None:
+                source = self._sources.get(int(source_id))
+                if source is None:
+                    raise KeyError(source_id)
+            else:
+                source = next(reversed(self._sources.values()), None)
+            source = dict(source) if source else None
+            if source:
+                source["v"] = list(source["v"])
+        baseline = None
+        if source is None:
+            source = _fallback_payment()
+            baseline = self.score(dict(source), explain=False)
+        copies = max(1, min(int(copies), 40))
+        scale = max(0.1, min(float(amount_scale), 20.0))
+        shift = v_shift or {}
+        scored = []
+        for index in range(copies):
+            row = dict(source)
+            row["v"] = list(source["v"])
+            while len(row["v"]) < 28:
+                row["v"].append(0.0)
+            for name, delta in shift.items():
+                if not str(name).startswith("V"):
+                    continue
+                slot = int(str(name)[1:]) - 1
+                if 0 <= slot < 28:
+                    row["v"][slot] = float(row["v"][slot]) + float(delta)
+            row["amount"] = float(source["amount"]) * scale
+            row["time"] = float(source["time"]) + index + 1
+            row["synthesized"] = True
+            scored.append(self.score(row, explain=True))
+        return {
+            "note": "What-if on a real row. The champion is not retrained.",
+            "baseline": baseline,
+            "copies": scored,
+        }
+
     def drift(self) -> dict:
         psi = self._psi()
         samples = list(self.recent_scores)
@@ -1571,6 +1813,14 @@ class Engine:
             "threshold": 0.2,
             "suggestion": suggestion,
             "history": history,
+            "correlation_shift": None if (shift := self._correlation_shift()) is None else round(shift, 4),
+            "volatility_high": any(
+                self._volatility_high(seg, bucket[-1][0])
+                for seg, bucket in self._minute_by_seg.items()
+                if bucket
+            ),
+            "network": log_summary().get("network"),
+            "atm": log_summary().get("atm"),
         }
 
     def copilot(self, decision: str, regime: str, reasons: list) -> dict:

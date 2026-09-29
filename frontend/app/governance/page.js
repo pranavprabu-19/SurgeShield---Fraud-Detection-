@@ -125,6 +125,16 @@ export default function GovernancePage() {
             {" "}(shift <span className="num">{drift?.mean_shift ?? 0}</span>)
           </p>
           {drift?.suggestion && <p className="mt-2 text-xs text-amber">{drift.suggestion}</p>}
+          <p className="mt-2 text-xs text-slate-400">
+            Correlation shift <span className="num">{drift?.correlation_shift ?? "n/a"}</span>
+            {" "}· amount volatility {drift?.volatility_high ? "high" : "quiet"}
+          </p>
+          {Array.isArray(drift?.network) && drift.network.length > 0 && (
+            <p className="mt-2 text-xs text-slate-400">Outbound sources above the file's own cut: {drift.network.map((row) => row.src).join(", ")}</p>
+          )}
+          {Array.isArray(drift?.atm) && drift.atm.length > 0 && (
+            <p className="mt-2 text-xs text-slate-400">ATM incidents: {drift.atm.map((row) => row.terminal_id).join(", ")}</p>
+          )}
           <div className="mt-3 h-36">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={drift?.history || []}>

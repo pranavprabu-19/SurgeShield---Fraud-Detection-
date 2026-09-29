@@ -33,6 +33,19 @@ def test_ring_buffer_and_lru_bounds():
     assert history.stores["user"]["solo"]["n"] == 11
 
 
+def test_csv_row_opens_on_the_first_challenge():
+    history = History()
+    history.record(_result(1, decision="STEP_UP"))
+    assert history.list_cases([]) == []
+    flagged = _result(2, user="csv", decision="STEP_UP", merchant="file")
+    flagged["from_csv"] = True
+    history.record(flagged)
+    cases = history.list_cases([])
+    assert cases[0]["id"] == "user-csv"
+    assert cases[0]["why"] == "challenged CSV row"
+    assert cases[0]["flags"] == 1
+
+
 def test_case_opens_after_two_flags():
     history = History()
     history.record(_result(1, decision="BLOCK"))

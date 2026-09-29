@@ -54,7 +54,7 @@ def friction_tier(decision: str, score: float, cfg: dict, profile: dict, amount:
     if decision == "BLOCK":
         return "BLOCKED"
     profile = profile or {}
-    if profile.get("device_farm") or profile.get("impossible_travel") or profile.get("model_probe") or (regime == "ATTACK" and attack_hot):
+    if profile.get("device_farm") or profile.get("impossible_travel") or profile.get("wormhole") or profile.get("ood") or profile.get("auth_flood") or profile.get("model_probe") or (regime == "ATTACK" and attack_hot):
         return "STEP_UP_AUTH"
     if float(amount) >= 10_000:
         return "OTP"

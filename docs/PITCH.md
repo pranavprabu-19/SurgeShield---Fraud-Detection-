@@ -1,12 +1,29 @@
 # Pitch (about 5 minutes)
 
+## Problem statement
+
+How we tell a genuine flash-sale surge apart from a coordinated account drain, as it happens.
+
+**Question.** Volume is not the signal. A genuine sale gets louder and stays diverse, so the regime stays SURGE and genuine buyers stay approved. A drain is a tight knot of look-alike payments, often a few rupees first and then the drain, and only the attacked segment latches ATTACK. Each payment is approved, stepped up, or blocked. The calibrated logistic champion is the only blocker. A named signal can step a quiet row up. It cannot block by itself.
+
+**Latency.** The decision is synchronous on the request. The Overview page shows p50 and p99. The 0–100 figure is the champion probability, not a second score. Held-out PR-AUC is 0.765. Recall at a 0.1% false-positive rate is 0.833. We do not claim 100%.
+
+**Adaptability.** Thresholds move with the regime. A sudden surge does not swap the model and does not flip the kill switch. Correlation shift, volatility, and topology are notes. Out-of-distribution distance is a step-up.
+
+**Context.** The live stream keeps a recent window per customer token and merchant token. A CSV row with no id still gets a stable token, and the first step-up or block opens a case. Investigate reviews those histories on its own.
+
+**The file, said honestly.** The brief describes demographics, merchant, and location. The file in the folder is Time, V1–V28, Amount, and Class. Those missing fields are named on the file report and are not invented. Geography, device, and session telemetry in the demo are badged simulated and never block alone. Login, network, and ATM checks stay off until a real file of that type is imported.
+
 ## 0:00 The loss
+
 "During a flash sale our bank can do one of two bad things. Tighten the rules, and Rahul's card dies at checkout while he is buying a laptop that 4,000 other people are also buying. Loosen the rules, and a bot ring drains accounts in the same minute, because the spike hides them. Static thresholds make us pick a loss."
 
 ## 0:40 The data, said honestly
+
 "The file we were given is 199,364 payments, 344 frauds, two days, PCA components, amount, and time. There is no user id and no merchant id. Approving everyone is 99.83% accurate and saves nobody. Fraud is twenty times higher around 2am, and the fraudulent tickets are smaller than normal ones, not larger. So 'big amount at a busy hour' is the wrong rule."
 
 ## Micro versus macro
+
 A sale and a drain can post the same volume. The difference is the mix.
 
 | Signal | Genuine sale | Attack | Source |
@@ -36,22 +53,30 @@ Simulated rows are badged in the drawer. They are not in the training file, and 
 | 10.1–10.5 confusion, false declines, rupees stopped, latency, incident filing | Analytics, Command, Incidents | No |
 
 ## 1:20 The idea
-"Volume is not the signal. The shape of the volume is. A real sale gets louder but stays diverse, and the risk scores do not jump. An attack is a tight knot of look-alike payments, often a few rupees first and then the drain. We approve, or we ask for OTP, or we block. We do not decline a grey-zone customer."
+
+"Volume is not the signal. The shape of the volume is. A real sale gets louder but stays diverse, and the risk scores do not jump. An attack is a tight knot of look-alike payments, often a few rupees first and then the drain. We approve, we step the payment up, or we block. We do not decline a grey-zone customer."
 
 ## Jury mode
+
 Press J, or the Jury mode button. Space advances, Backspace goes back, Esc exits. Nine chapters: normal, flash sale, bot ring, attack inside the sale, the new shapes, Big Billion Days in the War Room, a customer case, tamper and kill switch, then the before/after scorecard. If the API is down, the overlay plays the backup video.
 
 ## 1:50 Live
+
 Run `scripts/reset_demo.sh` before this. It restarts the API; otherwise Governance Verify shows the chain that was tampered in testing. Read the numbers on screen. Do not quote a latency, a percentage, or a decision count from memory.
 
+Press B and Boundary probe before Upload. Starting a scenario resets the live stream and the cases an upload just opened.
+
 1. Overview. Point at p50 and p99, and at the share of payments with zero friction.
-2. Sale War Room. Press B. The sale goes to SURGE, then its own attack phases latch ATTACK on that segment only. There is no inject button.
-3. Investigate. Click Run the model. It reads each stored history and writes Status and Why. Open cases were repeatedly flagged, so expect declines there, not a quiet approval.
-4. Analytics. Click Replay scenarios. About 10 seconds. The live stream is not reset, and the five-seed report is unchanged.
-5. Sale War Room. Boundary probe. The feed shows how far the risk sits under the block line. The decision stays a step-up.
-6. Governance. Verify, tamper one record, verify again, flip the kill switch. Payments keep flowing. The switch selects the fallback rule. It does not pause the queue, and nothing in the product times that click at 200 ms.
+2. Sale War Room. Press B. The sale goes to SURGE, then its own attack phases latch ATTACK on that segment only. There is no inject button. Then Boundary probe. The feed says how far that row's risk sits under the block line. The decision stays a step-up. The gap is that row's gap, not a fixed number.
+3. Analytics. The logistic, LightGBM, and XGBoost comparison is already on screen. XGBoost does not score checkout. Click Replay scenarios. About 10 seconds, on a side engine. The live stream is not reset, and the held-out precision-recall curve stays up.
+4. Upload. Drop a CSV. The first 2,000 rows are scored. File report, above the charts, states the decision counts, each feature that fired, and the columns the file does not have. Export this report prints that text. A step-up or block makes the Customer cell a case link.
+5. Investigate. Open that case from the Customer cell. The payment Reason column is the anomaly name. Do not click the review button. It already says Model running and reviews stored histories about every 5 seconds. Status and Why update on their own.
+6. Analytics. Morph this payment. Change the amount or V14. The new rows are marked synthesized.
+7. Governance. Verify, tamper one record, verify again, flip the kill switch. Payments keep flowing. The switch selects the fallback rule. It does not pause the queue, and nothing in the product times that click at 200 ms. Jury mode is the separate button in the top bar.
+8. Data. Reports lists the upload next to the installed creditcard test slice, with PR-AUC. Export report prints both.
 
 ## Detection matrix
+
 Five seeds each. "Latch" is the share of runs that entered ATTACK. Baseline is the old geometry-only detector. After is density, graph, sequence, and diversity together. A latch of 0 on the flash sale is the result we want.
 
 | Shape | Signal | Baseline latch | After | Rupees leaked before latch |
@@ -70,6 +95,7 @@ Five seeds each. "Latch" is the share of runs that entered ATTACK. Baseline is t
 The noisy ring did not slip past the old tightness cut on this file. We do not claim it did. The real gaps were slow pacing, card testing, fan-out, and mule fan-in. Shadow LightGBM blocks the classic rings, and on account takeover its block rate is 0.83 against the champion's row recall of 1.0, so the tree is still not the decision.
 
 ## Big Billion Days and Great Indian Festival
+
 Press B or G, then open the Sale War Room. The sale plays as phases: warm-up, the midnight open, then attacks riding the rush.
 
 | Phase | What the attacker does | What catches it |
@@ -81,22 +107,26 @@ Press B or G, then open the Sale War Room. The sale plays as phases: warm-up, th
 | Mule cash-out | Many cards into two merchants | Fan-in plus tightness |
 | Distributed drain (Festival) | Round amounts, fixed cadence | Suspicious-surge verdict and cloned-vector tightness |
 
-Device farm and impossible travel only ever raise a payment to an OTP. They never block on their own. The block still comes from the champion probability.
+Device farm and impossible travel only ever raise a payment to a step-up. They never block on their own. The block still comes from the champion probability. The step-up channel can be a device check, a push, an OTP, or strong auth.
 
 Red team, five seeds each, on the held-out file: every sale latched ATTACK, fraud row recall 1.0, false-decline rate 0.15% of genuine buyers. Rupees paid before the latch averaged ₹2,650 on Big Billion Days and ₹3,058 on the Festival, mostly the uncaught share of OTP step-ups. The static threshold has no latch at all.
 
 Every flagged customer opens a case in Investigate: profile, map of flagged cities, timeline, AI insights, notes, and Approve, Decline and flag, Escalate, or Request verification. Approve and Decline release or uphold that customer's open review, and every action is in the audit chain. Search takes a raw customer or merchant id, tokenizes it on the server, and never stores it.
 
 ## 3:30 The numbers
+
 PR-AUC 0.765 on the held-out file. Recall 0.83 at a 0.1% false-positive rate. Precision 0.78 at the block cut. Shadow LightGBM is 0.80 raw and we still did not let it decide, because the time holdout preferred the linear model. With explanations off, p99 on the laptop is about 2 ms and the batch path clears 1,000 transactions a second. The live feed with reason codes is about 10 to 16 ms. Do not say accuracy.
 
 ## 4:10 Trust
+
 "The model decides. The copilot only translates reason codes, and only if we give it a key. The audit log is encrypted, hash-chained, and retention-redacted. We cannot test gender or age bias because those columns were removed before we arrived, and we will not pretend otherwise."
 
 ## 4:40 Roadmap
+
 Federated training across issuers. The live token graph already runs on HMAC ids the bank sends at checkout. The training file still has none, so those two features are neutral offline. Analyst Uphold and Release nudge a segment threshold by at most 0.03, and a challenger can be proposed from those labels. A person promotes it. It does not replace the champion by itself.
 
 ## If they ask
+
 - **No raw ids in the model.** Checkout can send a user and a merchant. We HMAC them and count fan-in and fan-out. The training CSV has neither column, so `user_velocity_60` and `merchant_fan_in_300` are 0 offline and only matter live.
 - **Only 332 frauds after duplicates (344 in the raw file).** Time split, one test pass, class weights instead of synthetic fraud.
 - **Model fails.** Kill switch. Rules only. The queue does not stop.

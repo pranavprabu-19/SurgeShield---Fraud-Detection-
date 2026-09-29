@@ -96,12 +96,36 @@ CATALOG = (
         "action": "Step-up. Card testing still latches ATTACK through the champion and the card-test detector.",
     },
     {
+        "id": "wormhole",
+        "family": "Transactions",
+        "name": "One device in two far places",
+        "status": "live",
+        "sees": "The same device token pays from two points 300 km apart within 60 seconds, under different accounts.",
+        "action": "Step-up only. On the credit-card file the location is simulated. It is real only when the row carries a device and coordinates.",
+    },
+    {
         "id": "model_probe",
         "family": "Transactions",
         "name": "Amounts stepping toward the block line",
         "status": "live",
         "sees": "Five or more payments in 10 minutes, each larger than the last, all scored in the band just under the block cut.",
         "action": "Step-up only. It never blocks, and it does not move the champion score.",
+    },
+    {
+        "id": "ood",
+        "family": "Transactions",
+        "name": "Outside the training distance",
+        "status": "partial",
+        "sees": "Distance to the payment's segment centre, against the 99.9th percentile from training.",
+        "action": "Step-up only, and only when baselines.json is present. It never blocks.",
+    },
+    {
+        "id": "topology",
+        "family": "Transactions",
+        "name": "Repeat payers into one or two merchants",
+        "status": "partial",
+        "sees": "The connected group of customers, merchants, and devices in the last 5 minutes.",
+        "action": "A note when that group has 12 or more nodes, at most two merchants, and the same people pay again. Not a step-up, so a one-time flash sale is left alone.",
     },
     {
         "id": "fund_routing",
@@ -213,6 +237,14 @@ def fired_skills(row: dict) -> list:
         fired.append("velocity_burst")
     if profile.get("model_probe"):
         fired.append("model_probe")
+    if profile.get("wormhole"):
+        fired.append("wormhole")
+    if profile.get("ood"):
+        fired.append("ood")
+    if profile.get("topology"):
+        fired.append("topology")
+    if profile.get("auth_flood"):
+        fired.append("auth_flood")
     if float(detectors.get("fan_out") or 0) >= 0.5 or float(detectors.get("fan_in") or 0) >= 0.45:
         fired.append("fund_routing")
     if profile.get("suspicious_syntax"):
@@ -242,7 +274,7 @@ def judge_history(events: list, summary: dict) -> tuple:
     older_rows = risks[half:] or risks
     older = sum(older_rows) / len(older_rows)
     trend = recent - older
-    attack = {"device_farm", "impossible_travel", "card_test", "fan_out", "fan_in", "geometry", "sequence", "amount_spike", "velocity_burst", "input_syntax", "model_probe"}
+    attack = {"device_farm", "impossible_travel", "wormhole", "card_test", "fan_out", "fan_in", "geometry", "sequence", "amount_spike", "velocity_burst", "input_syntax", "model_probe", "ood", "topology", "auth_flood"}
     attack_hits = sum(1 for event in events for feature in (event.get("features") or []) if feature in attack)
     if rate >= 0.75 and payments >= 3:
         return "BLOCK", f"{flags} of {payments} payments were challenged and the pattern did not ease"
@@ -260,8 +292,37 @@ def judge_history(events: list, summary: dict) -> tuple:
 
 
 def coverage() -> dict:
+    from backend.app.logsignals import loaded_kinds
+    from ml.schema import ARTIFACT_DIR
+
+    kinds = loaded_kinds()
+    has_base = (ARTIFACT_DIR / "baselines.json").exists()
+    skills = []
+    for skill in CATALOG:
+        row = dict(skill)
+        if has_base and skill["id"] in {"ood", "topology"}:
+            row["status"] = "live"
+        if "login" in kinds and skill["id"] == "auth_flood":
+            row["status"] = "live"
+            row["sees"] = "A login log is loaded. Ten or more failures in ten minutes step that account up."
+            row["action"] = "Step-up only. It does not block."
+        if "network" in kinds and skill["id"] == "outbound_beacon":
+            row["status"] = "live"
+            row["sees"] = "Sources whose outbound bytes are above the 99.9th percentile of the imported network log."
+            row["action"] = "A monitor on Governance. A payment has no source address, so none is changed."
+        if "atm" in kinds and skill["id"] == "hardware_command":
+            row["status"] = "live"
+            row["sees"] = "Terminals with a dispense and no card event within 30 seconds."
+            row["action"] = "An incident list. No payment is changed."
+        if skill["id"] == "auth_flood" and row["status"] != "live":
+            row["file"] = "Import a login log with user_id, time, success"
+        if skill["id"] == "outbound_beacon" and row["status"] != "live":
+            row["file"] = "Import a network log with src, dst, bytes, time"
+        if skill["id"] == "hardware_command" and row["status"] != "live":
+            row["file"] = "Import an ATM log with terminal_id, event, time"
+        skills.append(row)
     return {
         "champion": "unchanged",
         "rule": "These skills explain or step a payment up. They do not retrain the champion and they do not block alone.",
-        "skills": list(CATALOG),
+        "skills": skills,
     }

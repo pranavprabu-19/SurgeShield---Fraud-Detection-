@@ -24,17 +24,31 @@ export default function InvestigatePage() {
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState("");
 
-  async function runModel() {
-    setRunning(true);
-    setRunError("");
-    try {
-      setReview(await api("/investigate/run", { method: "POST" }));
-    } catch (error) {
-      setRunError(String(error.message || error));
-    } finally {
-      setRunning(false);
+  useEffect(() => {
+    let stop = false;
+    let inflight = false;
+    async function tick() {
+      if (inflight || stop) return;
+      inflight = true;
+      setRunning(true);
+      setRunError("");
+      try {
+        const body = await api("/investigate/run", { method: "POST" });
+        if (!stop) setReview(body);
+      } catch (error) {
+        if (!stop) setRunError(String(error.message || error));
+      } finally {
+        inflight = false;
+        if (!stop) setRunning(false);
+      }
     }
-  }
+    tick();
+    const timer = setInterval(tick, 5000);
+    return () => {
+      stop = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     let stop = false;
@@ -95,8 +109,8 @@ export default function InvestigatePage() {
       <Panel
         title="Run the model"
         action={
-          <button type="button" onClick={runModel} disabled={running} className="rounded border border-mint px-3 py-1.5 text-sm text-mint disabled:opacity-50">
-            {running ? "Running…" : "Run the model"}
+          <button type="button" disabled className="rounded border border-mint px-3 py-1.5 text-sm text-mint disabled:opacity-70">
+            {running ? "Running…" : "Model running"}
           </button>
         }
       >
@@ -168,7 +182,7 @@ export default function InvestigatePage() {
       <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
         <Panel title={`Cases (${cases.length})`}>
           {cases.length === 0 ? (
-            <EmptyState title="No cases yet" detail="A customer opens a case after two challenged payments or when it joins an attack incident." />
+            <EmptyState title="No cases yet" detail="A customer opens a case after two challenged payments. A CSV upload opens one as soon as that row is stepped up or blocked." />
           ) : (
             <div className="max-h-[420px] overflow-auto">
               <table className="w-full text-left text-sm">
@@ -234,7 +248,7 @@ export default function InvestigatePage() {
         }
       >
         {rows.length === 0 ? (
-          <EmptyState title="Waiting for transactions" detail="Launch a scenario from Overview or the War Room." />
+          <EmptyState title="Waiting for transactions" detail="Launch a scenario from Overview or the War Room, or score a CSV on Upload." />
         ) : (
           <DataTable
             rows={rows}

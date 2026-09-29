@@ -72,6 +72,33 @@ def test_analyze_alias_surge_status_and_csv():
         )
         assert uploaded.status_code == 200
         assert uploaded.json()["count"] == 1
+        fat = f"{header}\n" + f"{row}\n" * 120_000
+        assert len(fat.encode()) > 8_000_000
+        large = client.post(
+            "/score/csv",
+            headers=HEADERS,
+            files={"file": ("fat.csv", fat, "text/csv")},
+        )
+        assert large.status_code == 200
+        assert large.json()["count"] == 2000
+        assert large.json()["truncated"] is True
+        header_only = "Time,Amount," + ",".join(f"V{i}" for i in range(1, 29))
+        quiet = "200,40," + ",".join(["0"] * 28)
+        noisy = "201,40," + ",".join(["0"] * 28)
+        uploaded_case = client.post(
+            "/score/csv",
+            headers=HEADERS,
+            files={"file": ("plain.csv", f"{header_only}\n{quiet}\n{noisy}\n", "text/csv")},
+        )
+        assert uploaded_case.status_code == 200
+        rows = uploaded_case.json()["decisions"]
+        assert rows[0]["user_token"]
+        assert rows[0]["user_token"] != rows[1]["user_token"]
+        cases = client.get("/cases", headers=HEADERS).json()["cases"]
+        opened = [case for case in cases if case["why"] == "challenged CSV row"]
+        assert opened
+        view = client.get(f"/entity/user/{opened[0]['token']}", headers=HEADERS).json()
+        assert view["summary"]["payments"] >= 1
 
 
 def test_sales_cases_entity_and_actions():
@@ -122,6 +149,28 @@ def test_sales_cases_entity_and_actions():
 
         found = client.post("/entity/lookup", json={"kind": "user", "raw_id": "someone-new"}, headers=HEADERS).json()
         assert found["found"] is False
+
+
+def test_reports_cover_uploads_and_installed_datasets():
+    header = "Time,Amount," + ",".join(f"V{i}" for i in range(1, 29))
+    row = "100,12.5," + ",".join(["0.1"] * 28)
+    with TestClient(app) as client:
+        uploaded = client.post(
+            "/score/csv",
+            headers=HEADERS,
+            files={"file": ("plain-report.csv", f"{header}\n{row}\n{row}\n", "text/csv")},
+        )
+        assert uploaded.status_code == 200
+        body = client.get("/reports", headers=HEADERS).json()
+        names = [item["name"] for item in body["uploads"]]
+        assert "plain-report.csv" in names
+        saved = next(item for item in body["uploads"] if item["name"] == "plain-report.csv")
+        assert "decisions" not in saved
+        assert set(saved["summary"]) <= {"APPROVE", "STEP_UP", "BLOCK"}
+        installed = {item["name"]: item for item in body["installed"]}
+        assert installed["creditcard"]["score"]["count"] > 0
+        assert set(installed["creditcard"]["score"]["summary"]) <= {"APPROVE", "STEP_UP", "BLOCK"}
+        assert installed["creditcard"]["pr_auc"] is not None
 
 
 def test_datasets_listing_and_unknown_activation():

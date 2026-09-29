@@ -7,8 +7,10 @@ import csv
 import io
 import json
 import os
+import tempfile
 import threading
 import time
+from pathlib import Path
 from collections import Counter
 from typing import Optional
 
@@ -24,7 +26,7 @@ from backend.app.governance.privacy import tokenize
 from backend.app.sales import public_events
 from backend.app.skills import coverage as skill_coverage
 from backend.app.scenarios import build_scenario
-from ml.datasets import active_name, artifact_path, field_sources, installed
+from ml.datasets import IMPORT_DIR, active_name, artifact_path, data_paths, field_sources, installed
 
 API_KEY = os.environ.get("SURGESHIELD_API_KEY", "surgeshield-demo")
 OPEN_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
@@ -35,9 +37,12 @@ async def lifespan(application: FastAPI):
     path = artifact_path()
     if not path.exists():
         raise RuntimeError(f"missing model artifact at {path}. Run python -m ml.train")
-    engine = Engine(path)
+    engine = Engine(path, persist_history=True)
     loop = asyncio.get_running_loop()
-    yield
+    try:
+        yield
+    finally:
+        engine.close_history()
 
 
 app = FastAPI(
@@ -96,6 +101,13 @@ class Batch(BaseModel):
     explain: bool = False
 
 
+class SynthesizeRequest(BaseModel):
+    id: Optional[int] = None
+    amount_scale: float = Field(default=1.0, ge=0.1, le=20)
+    v_shift: dict = Field(default_factory=dict)
+    copies: int = Field(default=1, ge=1, le=40)
+
+
 class SimulateRequest(BaseModel):
     scenario: str = Field(
         pattern="^(normal|flash_sale|bot_attack|mixed|noisy_ring|low_and_slow|card_testing|account_takeover|split_ring|mule_fan_in|distributed_drain|big_billion_day|great_indian_festival|replay_real|real_peak|boundary_probe)$"
@@ -146,6 +158,25 @@ def score(txn: Transaction, explain: bool = True):
     return engine.score(txn.model_dump(), explain=explain)
 
 
+@app.post("/synthesize")
+def synthesize(body: SynthesizeRequest):
+    shift = {}
+    for name, delta in (body.v_shift or {}).items():
+        if not str(name).startswith("V"):
+            continue
+        try:
+            slot = int(str(name)[1:])
+            delta_f = float(delta)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= slot <= 28 and -20 <= delta_f <= 20:
+            shift[f"V{slot}"] = delta_f
+    try:
+        return engine.synthesize(body.id, body.amount_scale, shift, body.copies)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="unknown payment")
+
+
 @app.post("/score/batch")
 def score_batch(batch: Batch):
     started = time.perf_counter()
@@ -189,12 +220,42 @@ def _csv_float(row: dict, *keys, default=0.0):
     return default
 
 
-@app.post("/score/csv")
-async def score_csv(file: UploadFile = File(...)):
-    raw = await file.read()
-    if len(raw) > 8_000_000:
-        raise HTTPException(status_code=413, detail="file is larger than 8 MB")
-    text = raw.decode("utf-8", errors="replace")
+CSV_SCORE_ROWS = 2000
+CSV_PREFIX_BYTES = 50_000_000
+
+
+async def _csv_prefix(file: UploadFile) -> str:
+    """Read only enough of a CSV to score the first 2,000 rows. The rest of a large file is ignored."""
+    parts: list[str] = []
+    seen = 0
+    lines = 0
+    needed = CSV_SCORE_ROWS + 1
+    while True:
+        chunk = await file.read(65_536)
+        if not chunk:
+            break
+        seen += len(chunk)
+        if seen > CSV_PREFIX_BYTES:
+            raise HTTPException(status_code=413, detail="the first 2,000 rows are larger than 50 MB")
+        text = chunk.decode("utf-8", errors="replace")
+        parts.append(text)
+        lines += text.count("\n")
+        if lines >= needed:
+            break
+    text = "".join(parts)
+    lines = text.splitlines(keepends=True)
+    return "".join(lines[:needed])
+
+
+def _csv_text(row: dict, *keys) -> str | None:
+    for key in keys:
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value)[:64]
+    return None
+
+
+def _score_csv_text(text: str, scorer) -> dict:
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
         raise HTTPException(status_code=400, detail="the file has no header row")
@@ -210,7 +271,7 @@ async def score_csv(file: UploadFile = File(...)):
     last_index = -1
     for index, row in enumerate(reader):
         last_index = index
-        if index >= 2000:
+        if index >= CSV_SCORE_ROWS:
             break
         vector = [_csv_float(row, f"V{key}") for key in range(1, 29)]
         label_raw = row.get("Class", row.get("is_fraud", row.get("label", row.get("eval_label"))))
@@ -222,21 +283,24 @@ async def score_csv(file: UploadFile = File(...)):
                 label = None
         lat = row.get("lat")
         lon = row.get("lon") or row.get("long")
+        user_id = _csv_text(row, "user_id", "cc_num", "nameOrig", "account", "card") or f"csv-row-{index}"
+        merchant_id = _csv_text(row, "merchant_id", "merchant", "nameDest", "merchantName") or "csv-file"
         txn = {
             "time": _csv_float(row, "Time", "time", default=float(index)),
             "amount": _csv_float(row, "Amount", "amount", "amt"),
             "v": vector,
-            "user_id": row.get("user_id") or row.get("cc_num") or None,
-            "merchant_id": row.get("merchant_id") or row.get("merchant") or None,
+            "user_id": user_id,
+            "merchant_id": merchant_id,
             "region": row.get("region") or row.get("city") or None,
             "device": row.get("device") or row.get("device_id") or None,
             "category": row.get("category") or None,
             "eval_label": label,
+            "from_csv": True,
         }
         try:
             txn["lat"] = float(lat) if lat not in (None, "") else None
             txn["lon"] = float(lon) if lon not in (None, "") else None
-            result = engine.score(txn, explain=False)
+            result = scorer(txn, explain=False)
         except (TypeError, ValueError):
             skipped += 1
             continue
@@ -268,6 +332,7 @@ async def score_csv(file: UploadFile = File(...)):
                     "merchant_token": result.get("merchant_token"),
                     "region": result.get("region"),
                     "reason": (result.get("reasons") or [{}])[0].get("text"),
+                    "features": [note.get("feature") for note in (result.get("reasons") or []) if note.get("feature")],
                 }
             )
     return {
@@ -283,6 +348,117 @@ async def score_csv(file: UploadFile = File(...)):
         "labels": labelled,
         "columns": list(reader.fieldnames or []),
     }
+
+
+_REPORT_KEYS = (
+    "count",
+    "skipped",
+    "truncated",
+    "summary",
+    "histogram",
+    "amounts",
+    "regimes",
+    "reasons",
+    "labels",
+    "columns",
+)
+_UPLOAD_CAP = 20
+_installed_cache: dict = {}
+_report_engine = None
+_report_lock = threading.Lock()
+
+
+def _reports_path() -> Path:
+    raw = os.environ.get("SURGESHIELD_UPLOAD_REPORTS")
+    if raw:
+        return Path(raw)
+    return IMPORT_DIR / "reports" / "uploads.json"
+
+
+def _slim_report(body: dict) -> dict:
+    return {key: body.get(key) for key in _REPORT_KEYS}
+
+
+def _read_uploads() -> list:
+    path = _reports_path()
+    if not path.exists():
+        return []
+    try:
+        rows = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return []
+    return rows if isinstance(rows, list) else []
+
+
+def _remember_upload(name: str, body: dict) -> None:
+    stored = _slim_report(body)
+    stored["name"] = (name or "upload.csv")[:120]
+    stored["scored_at"] = time.time()
+    rows = [stored, *_read_uploads()]
+    path = _reports_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(rows[:_UPLOAD_CAP]))
+
+
+def _file_prefix(path: Path) -> str:
+    lines = []
+    with path.open(newline="") as handle:
+        for index, line in enumerate(handle):
+            lines.append(line)
+            if index >= CSV_SCORE_ROWS:
+                break
+    return "".join(lines)
+
+
+def _installed_scorer():
+    global _report_engine
+    with _report_lock:
+        if _report_engine is None:
+            audit = tempfile.NamedTemporaryFile(prefix="surgeshield-report-", suffix=".db", delete=False)
+            audit.close()
+            _report_engine = Engine(audit_path=audit.name, persist_history=False)
+        return _report_engine.score
+
+
+def _installed_reports() -> list:
+    rows = []
+    for dataset in installed():
+        name = dataset["name"]
+        _train, test_path = data_paths(name)
+        metrics = ((dataset.get("metrics") or {}).get("test") or {})
+        card = {
+            "name": name,
+            "source": (dataset.get("report") or {}).get("source") or "built-in test file",
+            "rows": (dataset.get("report") or {}).get("rows"),
+            "fraud_rate": (dataset.get("report") or {}).get("fraud_rate"),
+            "pr_auc": metrics.get("pr_auc"),
+            "score": None,
+        }
+        if not test_path.exists():
+            rows.append(card)
+            continue
+        key = (str(test_path), test_path.stat().st_mtime_ns)
+        cached = _installed_cache.get(key)
+        if cached is None:
+            cached = _slim_report(_score_csv_text(_file_prefix(test_path), _installed_scorer()))
+            cached["scored_at"] = time.time()
+            _installed_cache[key] = cached
+        card["score"] = cached
+        rows.append(card)
+    return rows
+
+
+@app.post("/score/csv")
+async def score_csv(file: UploadFile = File(...)):
+    text = await _csv_prefix(file)
+    body = _score_csv_text(text, engine.score)
+    _remember_upload(file.filename or "upload.csv", body)
+    return body
+
+
+@app.get("/reports")
+def reports():
+    return {"uploads": _read_uploads(), "installed": _installed_reports()}
 
 
 @app.get("/regime")
@@ -370,6 +546,25 @@ def story():
 @app.get("/skills")
 def skills():
     return skill_coverage()
+
+
+@app.get("/compare")
+def compare_report():
+    from ml.schema import ARTIFACT_DIR
+
+    path = ARTIFACT_DIR / "compare.json"
+    if not path.exists():
+        return {"ready": False, "note": "python -m ml.compare writes ml/artifacts/compare.json. XGBoost is not on the scoring path."}
+    body = json.loads(path.read_text())
+    body["ready"] = True
+    return body
+
+
+@app.get("/taxonomy")
+def taxonomy():
+    from backend.app.taxonomy import coverage
+
+    return coverage()
 
 
 @app.post("/investigate/run")
@@ -549,9 +744,27 @@ def copilot(body: CopilotRequest):
     return engine.copilot(body.decision, body.regime, body.reasons)
 
 
+def _model_list() -> dict:
+    return {"active": active_name(), "loaded": engine.art.get("dataset", "creditcard"), "datasets": installed()}
+
+
 @app.get("/datasets")
 def datasets():
-    return {"active": active_name(), "loaded": engine.art.get("dataset", "creditcard"), "datasets": installed()}
+    return _model_list()
+
+
+@app.get("/models")
+def models():
+    return _model_list()
+
+
+@app.post("/models/route")
+def models_route(body: dict):
+    """Name the champion this raw row matches. Does not score it."""
+    from ml.router import route
+
+    name, matched = route(body)
+    return {"dataset": name, "has_model": artifact_path(name).exists(), "matched": matched}
 
 
 @app.post("/datasets/activate")

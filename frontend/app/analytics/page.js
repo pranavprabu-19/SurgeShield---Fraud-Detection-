@@ -16,11 +16,16 @@ import {
 } from "recharts";
 import { api, money } from "../../lib/api";
 import { ChartBox, Tip, tick } from "../../components/charts";
+import { LivePayments, ModelCompare } from "../../components/compare";
+import { ScenarioBar, TransactionDrawer } from "../../components/console";
 import { EmptyState, Panel, Skeleton } from "../../components/ui";
+import { useStream } from "../../lib/stream";
 
 const GRID = "#1c2740";
+const ANOMALIES = ["ood", "wormhole", "device_farm", "velocity_burst", "model_probe", "auth_flood", "topology"];
 
 export default function AnalyticsPage() {
+  const stream = useStream();
   const [data, setData] = useState(null);
   const [redteam, setRedteam] = useState(null);
   const [metrics, setMetrics] = useState(null);
@@ -28,6 +33,12 @@ export default function AnalyticsPage() {
   const [error, setError] = useState("");
   const [replay, setReplay] = useState(null);
   const [replaying, setReplaying] = useState(false);
+  const [focus, setFocus] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [scale, setScale] = useState(1);
+  const [v14, setV14] = useState(0);
+  const [copies, setCopies] = useState(1);
+  const [morphing, setMorphing] = useState(false);
 
   useEffect(() => {
     api("/metrics").then(setMetrics).catch(() => {});
@@ -81,14 +92,85 @@ export default function AnalyticsPage() {
     count,
     fill: thresholds.t_block && index / 40 >= thresholds.t_block ? "#fb7185" : thresholds.t_step && index / 40 >= thresholds.t_step ? "#fbbf24" : "#3ee0c5",
   }));
+  const anomalyCounts = {};
+  ANOMALIES.forEach((name) => {
+    anomalyCounts[name] = stream.feed.filter((row) => row.profile?.[name]).length;
+  });
+  const listed = stream.feed.filter((row) => {
+    if (!focus) return true;
+    if (focus.kind === "decision") return row.decision === focus.value;
+    if (focus.kind === "segment") return row.segment === focus.value;
+    if (focus.kind === "anomaly") return Boolean(row.profile?.[focus.value]);
+    if (focus.kind === "score") return Number(row.score) >= focus.value && Number(row.score) < focus.value + 0.025;
+    if (focus.kind === "cell") return cellMatch(row, focus.value);
+    return true;
+  });
   const recallRows = (redteam?.summary || []).map((row) => ({
     scenario: String(row.scenario || "").replaceAll("_", " "),
     recall: row.fraud_recall == null ? 0 : Math.round(row.fraud_recall * 100),
     detected: Math.round((row.detected_rate || 0) * 100),
   }));
 
+  async function morph() {
+    setMorphing(true);
+    setError("");
+    try {
+      await api("/synthesize", {
+        method: "POST",
+        body: JSON.stringify({
+          id: selected?.id,
+          amount_scale: scale,
+          v_shift: { V14: v14 },
+          copies,
+        }),
+      });
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setMorphing(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
+      <ScenarioBar />
+      <ModelCompare selected={selected || stream.feed[0]} />
+      <Panel title="Morph this payment">
+        <p className="text-xs text-slate-500">
+          Changes amount and V14 on a real scored row, then the champion scores the copies. It does not retrain and it does not invent login, network, or ATM logs.
+          {selected ? ` Source payment ${selected.id}.` : " No row picked, so the last real payment is used."}
+        </p>
+        <label className="mt-3 block text-xs text-slate-400">Amount scale {scale.toFixed(1)}x
+          <input className="ml-2 align-middle" type="range" min="0.5" max="8" step="0.1" value={scale} onChange={(event) => setScale(Number(event.target.value))} />
+        </label>
+        <label className="mt-2 block text-xs text-slate-400">V14 shift {v14.toFixed(1)}
+          <input className="ml-2 align-middle" type="range" min="-5" max="5" step="0.1" value={v14} onChange={(event) => setV14(Number(event.target.value))} />
+        </label>
+        <label className="mt-2 block text-xs text-slate-400">Copies {copies}
+          <input className="ml-2 align-middle" type="range" min="1" max="10" step="1" value={copies} onChange={(event) => setCopies(Number(event.target.value))} />
+        </label>
+        <button type="button" className="mt-3 rounded border border-mint px-3 py-1 text-sm text-mint disabled:opacity-50" disabled={morphing} onClick={morph}>
+          {morphing ? "Scoring…" : "Score copies"}
+        </button>
+      </Panel>
+      <Panel title="Live anomalies">
+        <div className="flex flex-wrap gap-2">
+          {ANOMALIES.map((name) => (
+            <button key={name} type="button" onClick={() => setFocus(focus?.kind === "anomaly" && focus.value === name ? null : { kind: "anomaly", value: name })} className={`rounded border px-2 py-1 text-xs ${focus?.kind === "anomaly" && focus.value === name ? "border-mint text-mint" : "border-line text-slate-400"}`}>
+              {name} {anomalyCounts[name]}
+            </button>
+          ))}
+          {focus && <button type="button" className="text-xs text-slate-500 underline" onClick={() => setFocus(null)}>Clear filter</button>}
+        </div>
+        <div className="mt-3">
+          <LivePayments
+            rows={listed}
+            onPick={setSelected}
+            empty={stream.feed.length ? "Nothing in this filter." : "Stream is idle. Run a sale above. Nothing here is invented."}
+          />
+        </div>
+      </Panel>
+      <TransactionDrawer selected={selected} onClose={() => setSelected(null)} />
       <Panel title="Held-out precision and recall">
         <p className="mb-3 text-xs text-slate-500">
           This curve is from the trained model on test.csv. It stays on screen when the live stream is idle.
@@ -119,7 +201,7 @@ export default function AnalyticsPage() {
                   <XAxis dataKey="score" tick={tick} stroke="#64748b" interval={4} />
                   <YAxis tick={tick} stroke="#64748b" width={32} allowDecimals={false} />
                   <Tooltip content={<Tip />} />
-                  <Bar dataKey="count" name="Payments" radius={[3, 3, 0, 0]}>
+                  <Bar dataKey="count" name="Payments" radius={[3, 3, 0, 0]} onClick={(bar) => setFocus({ kind: "score", value: Number(bar?.score) })}>
                     {histogram.map((bin) => <Cell key={bin.score} fill={bin.fill} />)}
                   </Bar>
                 </BarChart>
@@ -136,7 +218,7 @@ export default function AnalyticsPage() {
                 <XAxis dataKey="segment" tick={tick} stroke="#64748b" tickFormatter={(value) => `S${value}`} />
                 <YAxis tick={tick} stroke="#64748b" domain={[0, 1]} width={32} />
                 <Tooltip content={<Tip />} />
-                <Bar dataKey="mean_risk" name="Mean risk" fill="#38bdf8" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="mean_risk" name="Mean risk" fill="#38bdf8" radius={[3, 3, 0, 0]} onClick={(bar) => setFocus({ kind: "segment", value: bar?.segment })} />
                 <Bar dataKey="n" name="Payments" fill="#243352" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -146,10 +228,10 @@ export default function AnalyticsPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="SurgeShield confusion">
-          <Matrix matrix={data?.confusion_surgeshield} positive="Block or step-up" />
+          <Matrix matrix={data?.confusion_surgeshield} positive="Block or step-up" onPick={(cell) => setFocus({ kind: "cell", value: `ss:${cell}` })} />
         </Panel>
         <Panel title="Static threshold confusion">
-          <Matrix matrix={data?.confusion_static} positive="Block" />
+          <Matrix matrix={data?.confusion_static} positive="Block" onPick={(cell) => setFocus({ kind: "cell", value: `st:${cell}` })} />
         </Panel>
       </div>
 
@@ -180,7 +262,10 @@ export default function AnalyticsPage() {
                 <XAxis type="number" tick={tick} stroke="#64748b" />
                 <YAxis type="category" dataKey="name" tick={tick} stroke="#64748b" width={72} />
                 <Tooltip content={<Tip />} />
-                <Bar dataKey="value" name="Payments" fill="#38bdf8" radius={[0, 3, 3, 0]} barSize={18} />
+                <Bar dataKey="value" name="Payments" fill="#38bdf8" radius={[0, 3, 3, 0]} barSize={18} onClick={(bar) => {
+                  const map = { Approved: "APPROVE", Blocked: "BLOCK", "Step-up": "STEP_UP" };
+                  setFocus(map[bar?.name] ? { kind: "decision", value: map[bar.name] } : null);
+                }} />
               </BarChart>
             </ResponsiveContainer>
           </ChartBox>
@@ -319,23 +404,35 @@ export default function AnalyticsPage() {
   );
 }
 
-function Matrix({ matrix, positive }) {
+function cellMatch(row, token) {
+  const [side, cell] = String(token).split(":");
+  const positive = side === "st" ? row.static_decision === "BLOCK" : row.decision !== "APPROVE";
+  const fraud = row.eval_label === 1;
+  const legit = row.eval_label === 0;
+  if (cell === "tp") return fraud && positive;
+  if (cell === "fp") return legit && positive;
+  if (cell === "fn") return fraud && !positive;
+  if (cell === "tn") return legit && !positive;
+  return false;
+}
+
+function Matrix({ matrix, positive, onPick }) {
   const cells = matrix || { tp: 0, fp: 0, tn: 0, fn: 0 };
   const items = [
-    ["True positive", cells.tp, "text-ok"],
-    ["False positive", cells.fp, "text-ember"],
-    ["False negative", cells.fn, "text-amber"],
-    ["True negative", cells.tn, "text-slate-200"],
+    ["True positive", cells.tp, "text-ok", "tp"],
+    ["False positive", cells.fp, "text-ember", "fp"],
+    ["False negative", cells.fn, "text-amber", "fn"],
+    ["True negative", cells.tn, "text-slate-200", "tn"],
   ];
   return (
     <div>
       <p className="mb-2 text-xs text-slate-500">Positive class: {positive}. Counts use simulator ground truth only.</p>
       <div className="grid grid-cols-2 gap-2">
-        {items.map(([label, value, tone]) => (
-          <div key={label} className="panel-raised p-3">
+        {items.map(([label, value, tone, cell]) => (
+          <button key={label} type="button" className="panel-raised p-3 text-left" onClick={() => onPick?.(cell)}>
             <p className="text-[11px] uppercase text-slate-500">{label}</p>
             <p className={`num text-2xl ${tone}`}>{value}</p>
-          </div>
+          </button>
         ))}
       </div>
     </div>

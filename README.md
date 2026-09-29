@@ -36,7 +36,7 @@ npm install
 npx next dev -p 3010
 ```
 
-Open http://localhost:3010. The demo API key is `surgeshield-demo` (header `X-API-Key`).
+Open <http://localhost:3010>. The demo API key is `surgeshield-demo` (header `X-API-Key`).
 
 Port 8000 on this machine is already taken by another service, so the local demo uses 8010 and 3010. `docker compose` still publishes 8000 and 3000 when those ports are free. Before a jury run, `scripts/reset_demo.sh` restarts the API so the audit chain starts intact.
 
@@ -50,14 +50,16 @@ The API image needs `libgomp` (installed in the Dockerfile) and `ml/artifacts/su
 
 ## What the jury should click
 
-Run `scripts/reset_demo.sh` first. It restarts the API so Verify starts on an intact chain. Starting a scenario resets the live stream and the in-memory cases, so run Investigate before Boundary probe.
+Run `scripts/reset_demo.sh` first. It restarts the API so Verify starts on an intact chain. Read the numbers on screen. Do not quote a latency, a percentage, or a decision count from memory. Press B and Boundary probe before Upload. Starting a scenario resets the live stream and the cases an upload just opened.
 
 1. **Overview.** Read the p50 and p99 latency and the share of payments with zero friction. Both are on the page.
-2. **Sale War Room.** Press B. Big Billion Days goes to SURGE, then its own attack phases latch ATTACK on the attacked segment only. Press G for the Great Indian Festival. There is no separate inject button.
-3. **Investigate.** After the sale has opened cases, click **Run the model**. It reads each stored customer and merchant history and writes the decision into Status and Why.
-4. **Analytics.** Click **Replay scenarios**. The recorded scenarios run once, in about 10 seconds, on a side engine. The live stream and the five-seed report stay as they are.
-5. **Sale War Room again.** Choose **Boundary probe**. A row in the attack feed says how far the risk sits under the block line, and the decision stays a step-up.
-6. **Governance.** Verify the chain, tamper one record, verify again, then flip the kill switch. Payments keep flowing under the fallback rules.
+2. **Sale War Room.** Press B. Big Billion Days goes to SURGE, then its own attack phases latch ATTACK on the attacked segment only. There is no separate inject button. Then choose **Boundary probe**. The feed says how far that row's risk sits under the block line, and the decision stays a step-up. The gap is that row's gap.
+3. **Analytics.** The logistic, LightGBM, and XGBoost comparison is already on screen. XGBoost does not score checkout. Click **Replay scenarios**. The recorded scenarios run once on a side engine. The live stream and the held-out precision-recall curve stay as they are.
+4. **Upload.** Drop a CSV. The first 2,000 rows are scored. **File report** appears above the charts: decision counts, each feature that fired, and the columns the file does not have. **Export this report** prints that text. A step-up or block makes the Customer cell a case link. A file with no customer id uses `csv-row-1`, `csv-row-2`, and so on.
+5. **Investigate.** Open that case. The payment Reason column is the anomaly name. Do not click the review button. It already says **Model running** and reviews stored histories about every 5 seconds. Status and Why update on their own. A history that stays challenged is declined. A quiet one is approved.
+6. **Analytics again.** **Morph this payment.** Change the amount or V14. The new rows are marked synthesized. They are not passed off as live checkout traffic.
+7. **Governance.** Verify the chain, tamper one record, verify again, then flip the kill switch. Payments keep flowing under the fallback rules. **Jury mode** is the separate button in the top bar.
+8. **Data.** **Reports** lists the upload next to the installed creditcard test slice, with PR-AUC. **Export report** prints both.
 
 ## Import your own data
 
@@ -85,6 +87,8 @@ SURGESHIELD_DATASET=upi_bank PYTHONPATH=. .venv/bin/python -m ml.train
 ```
 
 Leave `SURGESHIELD_DATASET` unset to score with the committed credit-card champion.
+
+If several files are already in `data/`, `scripts/import_all.sh` imports each one that is present and skips the rest. `scripts/train_all.sh` then trains a champion only where `data/<name>/train.csv` exists and no model file does yet. It does not retrain the credit-card champion. The Data page is where a trained champion is activated. `POST /models/route` only names which champion a raw row matches. It does not score, and `POST /score` still uses the champion that is loaded.
 
 ## Privacy
 
