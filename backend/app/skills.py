@@ -276,15 +276,15 @@ def judge_history(events: list, summary: dict) -> tuple:
     trend = recent - older
     attack = {"device_farm", "impossible_travel", "wormhole", "card_test", "fan_out", "fan_in", "geometry", "sequence", "amount_spike", "velocity_burst", "input_syntax", "model_probe", "ood", "topology", "auth_flood"}
     attack_hits = sum(1 for event in events for feature in (event.get("features") or []) if feature in attack)
-    if rate >= 0.75 and payments >= 3:
+    if rate >= 0.85 and payments >= 3:
         return "BLOCK", f"{flags} of {payments} payments were challenged and the pattern did not ease"
-    if attack_hits >= 2 and rate >= 0.5:
+    if attack_hits >= 3 and rate >= 0.75:
         return "BLOCK", "attack signals repeat across this history"
-    if trend >= 15 and recent >= 40:
+    if trend >= 30 and recent >= 70:
         return "BLOCK", "risk rose across the history"
-    if rate >= 0.5 and recent >= 20:
+    if rate >= 0.8 and recent >= 50:
         return "BLOCK", f"risk stayed near {round(recent)} on {flags} of {payments} payments"
-    if rate <= 0.34 and recent < 40:
+    if rate <= 0.5 and recent < 60:
         return "APPROVE", "most of the history is quiet and risk is not climbing"
     if recent < 25 and trend <= 0:
         return "APPROVE", "recent payments are quieter than the earlier ones"

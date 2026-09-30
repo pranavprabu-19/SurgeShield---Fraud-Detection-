@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, Line, LineChart, Area, AreaChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Target, Activity, ShieldCheck, Crosshair, Zap, Cpu } from "lucide-react";
 import { api } from "../../lib/api";
 import { LivePayments, ModelCompare } from "../../components/compare";
 import { Panel, Skeleton } from "../../components/ui";
@@ -41,22 +42,28 @@ export default function ModelPage() {
         </p>
       </Panel>
       <section className="grid gap-3 md:grid-cols-4">
-        <Metric label="PR-AUC" value={test.pr_auc?.toFixed(3)} />
-        <Metric label="ROC-AUC" value={test.roc_auc?.toFixed(3)} />
-        <Metric label="Recall at 0.1% FPR" value={test.recall_at_0_1pct_fpr?.toFixed(3)} />
-        <Metric label="Precision at block" value={rates.precision?.toFixed(3)} />
+        <Metric label="PR-AUC" value={test.pr_auc?.toFixed(3)} icon={Target} />
+        <Metric label="ROC-AUC" value={test.roc_auc?.toFixed(3)} icon={Activity} />
+        <Metric label="Recall at 0.1% FPR" value={test.recall_at_0_1pct_fpr?.toFixed(3)} icon={Crosshair} />
+        <Metric label="Precision at block" value={rates.precision?.toFixed(3)} icon={ShieldCheck} />
       </section>
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="Precision-recall curve">
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data.pr_curve || []}>
+              <AreaChart data={data.pr_curve || []}>
+                <defs>
+                  <linearGradient id="colorModelPR" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3ee0c5" stopOpacity={0.5}/>
+                    <stop offset="95%" stopColor="#3ee0c5" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <XAxis dataKey="recall" stroke="#64748b" fontSize={11} />
                 <YAxis stroke="#64748b" fontSize={11} domain={[0, 1]} />
                 <Tooltip />
-                <Line dataKey="precision" stroke="#3ee0c5" dot={false} />
-                {point && <ReferenceLine x={point.recall} stroke="#fbbf24" />}
-              </LineChart>
+                <Area type="monotone" dataKey="precision" stroke="#3ee0c5" strokeWidth={3} fillOpacity={1} fill="url(#colorModelPR)" />
+                {point && <ReferenceLine x={point.recall} stroke="#fbbf24" strokeDasharray="3 3" />}
+              </AreaChart>
             </ResponsiveContainer>
           </div>
           <p className="text-xs text-slate-500">
@@ -68,14 +75,14 @@ export default function ModelPage() {
           <p className="num mt-3 text-sm">Cut {cut.toFixed(2)}</p>
           <p className="mt-2 text-sm text-slate-300">Precision {point?.precision ?? "—"} · Recall {point?.recall ?? "—"}</p>
           <p className="mt-2 text-xs text-slate-500">Read from the stored curve. It does not retrain or change the live thresholds.</p>
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <p className="text-slate-500">Champion (calibrated logistic regression)</p>
-              <p className="num text-2xl">{champion?.pr_auc?.toFixed(3)}</p>
+          <div className="mt-6 grid grid-cols-2 gap-4 text-sm">
+            <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+              <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Cpu className="w-3 h-3 text-mint"/> Champion (LogReg)</p>
+              <p className="num text-3xl font-black text-mint mt-1">{champion?.pr_auc?.toFixed(3)}</p>
             </div>
-            <div>
-              <p className="text-slate-500">Shadow LightGBM</p>
-              <p className="num text-2xl">{shadow?.pr_auc?.toFixed(3)}</p>
+            <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+              <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5"><Zap className="w-3 h-3 text-amber"/> Shadow (LightGBM)</p>
+              <p className="num text-3xl font-black text-amber mt-1">{shadow?.pr_auc?.toFixed(3)}</p>
             </div>
           </div>
         </Panel>
@@ -84,12 +91,18 @@ export default function ModelPage() {
         <Panel title="Calibration">
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data.calibration || []}>
+              <AreaChart data={data.calibration || []}>
+                <defs>
+                  <linearGradient id="colorCal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5}/>
+                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <XAxis dataKey="mean_score" stroke="#64748b" fontSize={11} />
                 <YAxis stroke="#64748b" fontSize={11} domain={[0, 1]} />
                 <Tooltip />
-                <Line dataKey="fraud_rate" stroke="#38bdf8" />
-              </LineChart>
+                <Area type="monotone" dataKey="fraud_rate" stroke="#38bdf8" strokeWidth={3} fillOpacity={1} fill="url(#colorCal)" />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </Panel>
@@ -303,11 +316,17 @@ function AdaptPanel() {
   );
 }
 
-function Metric({ label, value }) {
+function Metric({ label, value, icon: Icon }) {
   return (
-    <div className="panel p-3">
-      <p className="text-[11px] uppercase text-slate-500">{label}</p>
-      <p className="num mt-1 text-2xl">{value ?? "—"}</p>
+    <div className="panel p-4 bg-panel/80 backdrop-blur-md border border-mint/20 relative overflow-hidden group hover:border-mint/50 transition-colors">
+      <div className="flex justify-between items-start relative z-10">
+        <p className="text-[10px] font-bold tracking-widest uppercase text-slate-400">{label}</p>
+        {Icon && <Icon className="w-4 h-4 text-mint/50 group-hover:text-mint transition-colors" />}
+      </div>
+      <p className="num mt-2 text-3xl font-black text-slate-100 relative z-10">{value ?? "—"}</p>
+      <div className="absolute -bottom-4 -right-4 opacity-5 group-hover:opacity-10 transition-opacity">
+        {Icon && <Icon className="w-24 h-24 text-mint" />}
+      </div>
     </div>
   );
 }

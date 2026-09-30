@@ -87,8 +87,8 @@ export default function AppShell({ children }) {
     : "--:--:--";
 
   return (
-    <div className="flex min-h-screen">
-      <aside className={clsx("flex shrink-0 flex-col border-r border-line bg-panel", collapsed ? "w-16" : "w-56")}>
+    <div className="flex min-h-screen relative z-10">
+      <aside className={clsx("flex shrink-0 flex-col border-r border-line bg-panel/70 backdrop-blur-md", collapsed ? "w-16" : "w-56")}>
         <button className="px-4 py-4 text-left" onClick={() => setCollapsed((value) => !value)}>
           <p className="text-[10px] uppercase tracking-[0.22em] text-mint">SurgeShield</p>
           {!collapsed && <p className="text-sm font-semibold">Fraud operations</p>}
@@ -127,7 +127,7 @@ export default function AppShell({ children }) {
         )}
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-xs">
+        <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-xs bg-ink/50 backdrop-blur-sm">
           <span className="flex items-center gap-1.5">
             <span className={clsx("h-2 w-2 rounded-full", stream.connection === "LIVE" ? "bg-ok" : stream.connection === "POLLING" ? "bg-amber" : "bg-ember")} />
             {stream.connection}

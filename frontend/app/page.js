@@ -37,7 +37,152 @@ function FrictionBar({ totals }) {
   );
 }
 
+
+function exportTrainedDataReport(totals, analytics, benefit) {
+  const popup = window.open("", "_blank");
+  if (!popup) return;
+
+  const ss_approve = totals.ss_approve || 0;
+  const ss_step = totals.ss_step || 0;
+  const ss_block = totals.ss_block || 0;
+  const seen = totals.seen || Math.max(ss_approve + ss_step + ss_block, 1);
+  
+  const ss_fraud_caught_amt = totals.ss_fraud_caught_amt || 0;
+  const ss_legit_approved_amt = totals.ss_legit_approved_amt || 0;
+  const ss_legit_blocked_amt = totals.ss_legit_blocked_amt || 0;
+  
+  const st_fraud_caught_amt = totals.st_fraud_caught_amt || 0;
+  const st_legit_blocked_amt = totals.st_legit_blocked_amt || 0;
+
+  popup.document.write(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Training & Stream Analytics Report</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+
+    body { font-family: 'Inter', sans-serif; padding: 40px; color: #e2e8f0; max-width: 900px; margin: 0 auto; background-color: #0b1220; position: relative; }
+    body::before {
+      content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background-image: linear-gradient(rgba(62, 224, 197, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(62, 224, 197, 0.05) 1px, transparent 1px);
+      background-size: 20px 20px; z-index: -1; pointer-events: none;
+    }
+    .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #3ee0c5; padding-bottom: 20px; }
+    .title { font-size: 32px; font-weight: 800; color: #3ee0c5; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.1em; text-shadow: 0 0 10px rgba(62,224,197,0.5); }
+    .subtitle { font-size: 14px; color: #94a3b8; font-family: monospace; }
+    .card { background: rgba(30, 41, 59, 0.7); border-radius: 12px; padding: 24px; box-shadow: 0 0 20px rgba(0,0,0,0.5); margin-bottom: 32px; border: 1px solid rgba(62, 224, 197, 0.2); backdrop-filter: blur(10px); }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .kpi { padding: 16px; background: rgba(15, 23, 42, 0.8); border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05); }
+    .kpi-value { font-size: 28px; font-weight: 700; font-family: monospace; }
+    .kpi-label { font-size: 10px; text-transform: uppercase; color: #94a3b8; margin-top: 6px; font-weight: 700; letter-spacing: 0.1em; }
+    .bar-chart { display: flex; height: 16px; border-radius: 4px; overflow: hidden; margin-top: 24px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); }
+    .bar { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #0b1220; font-weight: 700; }
+    .bar.approve { background: #3ee0c5; }
+    .bar.step-up { background: #fbbf24; }
+    .bar.block { background: #fb7185; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; text-align: left; background: rgba(15, 23, 42, 0.8); border-radius: 8px; overflow: hidden; }
+    th { padding: 14px; border-bottom: 1px solid rgba(62,224,197,0.3); font-weight: 700; color: #3ee0c5; text-transform: uppercase; font-size: 11px; letter-spacing: 0.1em; background: rgba(30,41,59,0.9); }
+    td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #cbd5e1; font-size: 13px; font-family: monospace; }
+    tr:hover { background: rgba(62,224,197,0.05); }
+    h2 { font-size: 14px; font-weight: 700; color: #3ee0c5; margin-top: 0; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 0.1em; display: flex; align-items: center; gap: 8px; }
+    h2::before { content: "■"; color: #fbbf24; }
+    .footer { text-align: center; margin-top: 60px; font-size: 11px; font-family: monospace; color: #64748b; border-top: 1px solid rgba(62,224,197,0.2); padding-top: 24px; }
+    @media print {
+      body { background-color: #0b1220 !important; -webkit-print-color-adjust: exact; color-adjust: exact; }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">Trained Data & Stream Report</div>
+    <div class="subtitle">SurgeShield Overall Performance Overview</div>
+  </div>
+
+  <div class="card">
+    <h2>Traffic Decisions</h2>
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-value" style="color: #3b82f6;">${seen.toLocaleString("en-IN")}</div>
+        <div class="kpi-label">Total Seen</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value" style="color: #10b981;">${ss_approve.toLocaleString("en-IN")}</div>
+        <div class="kpi-label">Approved</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value" style="color: #f59e0b;">${ss_step.toLocaleString("en-IN")}</div>
+        <div class="kpi-label">Step-Up</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value" style="color: #ef4444;">${ss_block.toLocaleString("en-IN")}</div>
+        <div class="kpi-label">Blocked</div>
+      </div>
+    </div>
+    
+    <div style="font-size: 14px; color: #64748b; text-align: center; margin-bottom: 8px;">Decision Distribution</div>
+    <div class="bar-chart">
+      ${ss_approve > 0 ? `<div class="bar approve" style="width: ${(ss_approve / seen) * 100}%"></div>` : ''}
+      ${ss_step > 0 ? `<div class="bar step-up" style="width: ${(ss_step / seen) * 100}%"></div>` : ''}
+      ${ss_block > 0 ? `<div class="bar block" style="width: ${(ss_block / seen) * 100}%"></div>` : ''}
+    </div>
+    <div style="display: flex; justify-content: space-between; font-size: 12px; color: #64748b; margin-top: 8px; font-weight: 500;">
+      <span style="color: #10b981;">${Math.round((ss_approve/seen)*100)}% Approved</span>
+      <span style="color: #f59e0b;">${Math.round((ss_step/seen)*100)}% Step-Up</span>
+      <span style="color: #ef4444;">${Math.round((ss_block/seen)*100)}% Blocked</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Business Impact vs Static Rules</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>SurgeShield AI</th>
+          <th>Static Threshold</th>
+          <th>Difference</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="font-weight: 500; color: #e2e8f0;">Fraud Stopped</td>
+          <td style="color: #10b981; font-weight: 600;">₹${ss_fraud_caught_amt.toLocaleString("en-IN")}</td>
+          <td>₹${st_fraud_caught_amt.toLocaleString("en-IN")}</td>
+          <td style="color: ${(ss_fraud_caught_amt - st_fraud_caught_amt) >= 0 ? '#10b981' : '#ef4444'};">
+            ${(ss_fraud_caught_amt - st_fraud_caught_amt) >= 0 ? '+' : ''}₹${(ss_fraud_caught_amt - st_fraud_caught_amt).toLocaleString("en-IN")}
+          </td>
+        </tr>
+        <tr>
+          <td style="font-weight: 500; color: #e2e8f0;">Revenue Lost (False Declines)</td>
+          <td style="color: #ef4444; font-weight: 600;">₹${ss_legit_blocked_amt.toLocaleString("en-IN")}</td>
+          <td>₹${st_legit_blocked_amt.toLocaleString("en-IN")}</td>
+          <td style="color: ${(st_legit_blocked_amt - ss_legit_blocked_amt) >= 0 ? '#10b981' : '#ef4444'};">
+            ${(st_legit_blocked_amt - ss_legit_blocked_amt) >= 0 ? '+' : ''}₹${(st_legit_blocked_amt - ss_legit_blocked_amt).toLocaleString("en-IN")} saved
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <div style="margin-top: 24px; padding: 16px; background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(62,224,197,0.3); border-radius: 8px; border-left: 4px solid #10b981;">
+      <div style="font-size: 12px; text-transform: uppercase; color: #64748b; font-weight: 600; letter-spacing: 0.05em;">Net Financial Benefit</div>
+      <div style="font-size: 28px; font-weight: 700; color: #3ee0c5; text-shadow: 0 0 10px rgba(62,224,197,0.5); margin-top: 4px;">₹${(benefit || 0).toLocaleString("en-IN")}</div>
+      <div style="font-size: 13px; color: #94a3b8; margin-top: 4px;">Total financial gain of SurgeShield AI vs static rules.</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Generated by SurgeShield Analytics &bull; ${new Date().toLocaleString()}
+  </div>
+</body>
+</html>`);
+  popup.document.close();
+  setTimeout(() => popup.print(), 500);
+}
+
 export default function OverviewPage() {
+
   const stream = useStream();
   const [buckets, setBuckets] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -100,7 +245,19 @@ export default function OverviewPage() {
     <div className="space-y-4">
       <ScenarioBar />
 
-      <Panel title="Stream regime" demo="regime">
+      <Panel 
+        title="Stream regime" 
+        demo="regime" 
+        action={
+          <button
+            type="button"
+            onClick={() => exportTrainedDataReport(totals, analytics, benefit)}
+            className="rounded border border-mint px-3 py-1 text-xs text-mint"
+          >
+            Export training report
+          </button>
+        }
+      >
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <SeverityBadge value={stream.regime} />

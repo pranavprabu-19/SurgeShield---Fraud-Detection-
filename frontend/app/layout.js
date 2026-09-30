@@ -1,5 +1,6 @@
 import "./globals.css";
 import Providers from "../components/Providers";
+import CyberBackground from "../components/CyberBackground";
 
 export const metadata = {
   title: "SurgeShield",
@@ -9,7 +10,8 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className="min-h-screen font-sans">
+      <body className="min-h-screen font-sans bg-ink text-slate-200 relative overflow-x-hidden">
+        <CyberBackground />
         <Providers>{children}</Providers>
       </body>
     </html>

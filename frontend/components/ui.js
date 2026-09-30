@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import clsx from "clsx";
+import { motion, AnimatePresence } from "framer-motion";
 
 export function Panel({ title, action, children, className, demo }) {
   return (
-    <section className={clsx("panel p-4", className)} data-demo={demo}>
+    <section className={clsx("panel p-4 bg-panel/60 backdrop-blur-md border border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.1)]", className)} data-demo={demo}>
       {(title || action) && (
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-xs uppercase tracking-[0.16em] text-slate-400">{title}</h2>
@@ -19,10 +20,28 @@ export function Panel({ title, action, children, className, demo }) {
 
 export function KpiTile({ label, value, hint, delta, spark }) {
   return (
-    <div className="panel p-3">
-      <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="num mt-1 text-xl font-semibold text-slate-50">{value}</p>
-      <div className="mt-1 flex items-center justify-between gap-2">
+    <motion.div 
+      className="panel p-3 relative overflow-hidden group"
+      whileHover={{ scale: 1.02 }}
+      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+    >
+      <div className="absolute inset-0 bg-gradient-to-br from-mint/5 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+      <p className="text-[11px] uppercase tracking-wide text-slate-400 relative z-10">{label}</p>
+      <div className="num mt-1 text-xl font-semibold text-slate-50 relative z-10 flex overflow-hidden">
+        <AnimatePresence mode="popLayout">
+          <motion.span
+            key={value}
+            initial={{ y: "100%", opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: "-100%", opacity: 0, position: "absolute" }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="inline-block"
+          >
+            {value}
+          </motion.span>
+        </AnimatePresence>
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2 relative z-10">
         <p className="text-[11px] text-slate-500">{hint}</p>
         {delta != null && (
           <span className={clsx("num text-[11px]", delta >= 0 ? "text-ok" : "text-ember")}>
@@ -32,7 +51,7 @@ export function KpiTile({ label, value, hint, delta, spark }) {
         )}
       </div>
       {spark?.length > 1 && (
-        <svg viewBox="0 0 80 18" className="mt-2 h-4 w-full">
+        <svg viewBox="0 0 80 18" className="mt-2 h-4 w-full relative z-10">
           <polyline
             fill="none"
             stroke="#3ee0c5"
@@ -48,7 +67,7 @@ export function KpiTile({ label, value, hint, delta, spark }) {
           />
         </svg>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -162,9 +181,9 @@ export function Skeleton({ className }) {
 
 export function DataTable({ columns, rows, onRow, rowKey }) {
   return (
-    <div className="max-h-[420px] overflow-auto">
+    <div className="max-h-[420px] overflow-auto relative rounded-md">
       <table className="w-full text-left text-sm">
-        <thead className="sticky top-0 bg-panel text-[11px] uppercase tracking-wide text-slate-500">
+        <thead className="sticky top-0 z-10 bg-panel/90 backdrop-blur-md text-[11px] uppercase tracking-wide text-slate-500 shadow-sm">
           <tr>
             {columns.map((column) => (
               <th key={column.key} className="px-3 py-2 font-medium">{column.label}</th>
@@ -172,19 +191,37 @@ export function DataTable({ columns, rows, onRow, rowKey }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, index) => (
-            <tr
-              key={rowKey ? rowKey(row) : index}
-              className="cursor-pointer border-t border-line hover:bg-white/[0.03]"
-              onClick={() => onRow?.(row)}
-            >
-              {columns.map((column) => (
-                <td key={column.key} className="px-3 py-2 align-middle">
-                  {column.render ? column.render(row) : row[column.key]}
-                </td>
-              ))}
-            </tr>
-          ))}
+          <AnimatePresence initial={false}>
+            {rows.map((row, index) => {
+              const key = rowKey ? rowKey(row) : index;
+              return (
+                <motion.tr
+                  key={key}
+                  layout
+                  initial={{ opacity: 0, y: -15, backgroundColor: "rgba(52, 211, 153, 0.15)" }}
+                  animate={{ opacity: 1, y: 0, backgroundColor: "rgba(255, 255, 255, 0)" }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.4, type: "spring", bounce: 0.3 }}
+                  className="cursor-pointer border-t border-line hover:bg-white/[0.03] group relative"
+                  onClick={() => onRow?.(row)}
+                >
+                  {columns.map((column) => (
+                    <td key={column.key} className="px-3 py-2 align-middle">
+                      {column.render ? column.render(row) : row[column.key]}
+                    </td>
+                  ))}
+                  {/* Quick Action Overlay on Hover */}
+                  {onRow && (
+                    <td className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 pointer-events-none">
+                      <div className="rounded-full bg-mint/20 px-3 py-1 text-[11px] font-medium text-mint shadow-lg border border-mint/30 backdrop-blur-md">
+                        Click to view graph
+                      </div>
+                    </td>
+                  )}
+                </motion.tr>
+              );
+            })}
+          </AnimatePresence>
         </tbody>
       </table>
     </div>

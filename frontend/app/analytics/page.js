@@ -13,6 +13,8 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  Area, AreaChart, ComposedChart,
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from "recharts";
 import { api, money } from "../../lib/api";
 import { ChartBox, Tip, tick } from "../../components/charts";
@@ -20,6 +22,7 @@ import { LivePayments, ModelCompare } from "../../components/compare";
 import { ScenarioBar, TransactionDrawer } from "../../components/console";
 import { EmptyState, Panel, Skeleton } from "../../components/ui";
 import { useStream } from "../../lib/stream";
+import { ShieldAlert, Activity, CheckCircle2, XOctagon } from "lucide-react";
 
 const GRID = "#1c2740";
 const ANOMALIES = ["ood", "wormhole", "device_farm", "velocity_burst", "model_probe", "auth_flood", "topology"];
@@ -105,6 +108,12 @@ export default function AnalyticsPage() {
     if (focus.kind === "cell") return cellMatch(row, focus.value);
     return true;
   });
+    const radarData = ANOMALIES.map((name) => ({
+    subject: name,
+    A: anomalyCounts[name] || 0,
+    fullMark: Math.max(...Object.values(anomalyCounts), 10)
+  }));
+
   const recallRows = (redteam?.summary || []).map((row) => ({
     scenario: String(row.scenario || "").replaceAll("_", " "),
     recall: row.fraud_recall == null ? 0 : Math.round(row.fraud_recall * 100),
@@ -178,33 +187,43 @@ export default function AnalyticsPage() {
         </p>
         <ChartBox height={240}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={metrics?.pr_curve || []}>
+            <AreaChart data={metrics?.pr_curve || []}>
+              <defs>
+                <linearGradient id="colorPrecision" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3ee0c5" stopOpacity={0.4}/>
+                  <stop offset="95%" stopColor="#3ee0c5" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
               <CartesianGrid stroke={GRID} vertical={false} />
               <XAxis dataKey="recall" tick={tick} stroke="#64748b" tickFormatter={(value) => Number(value).toFixed(1)} />
               <YAxis tick={tick} stroke="#64748b" domain={[0, 1]} width={36} />
               <Tooltip content={<Tip />} />
-              <Line dataKey="precision" name="Precision" stroke="#3ee0c5" strokeWidth={2} dot={false} />
-            </LineChart>
+              <Area type="monotone" dataKey="precision" name="Precision" stroke="#3ee0c5" strokeWidth={3} fillOpacity={1} fill="url(#colorPrecision)" />
+            </AreaChart>
           </ResponsiveContainer>
         </ChartBox>
       </Panel>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <Panel title="Live score distribution">
           {!live ? (
             <EmptyState title="No live scores yet" detail="Run a sale or upload a file. The curve above is the held-out model." />
           ) : (
             <ChartBox>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={histogram}>
+                <AreaChart data={histogram}>
+                  <defs>
+                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#fbbf24" stopOpacity={0.6}/>
+                      <stop offset="95%" stopColor="#fbbf24" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid stroke={GRID} vertical={false} />
                   <XAxis dataKey="score" tick={tick} stroke="#64748b" interval={4} />
                   <YAxis tick={tick} stroke="#64748b" width={32} allowDecimals={false} />
                   <Tooltip content={<Tip />} />
-                  <Bar dataKey="count" name="Payments" radius={[3, 3, 0, 0]} onClick={(bar) => setFocus({ kind: "score", value: Number(bar?.score) })}>
-                    {histogram.map((bin) => <Cell key={bin.score} fill={bin.fill} />)}
-                  </Bar>
-                </BarChart>
+                  <Area type="monotone" dataKey="count" name="Payments" stroke="#fbbf24" strokeWidth={2} fillOpacity={1} fill="url(#colorCount)" onClick={(bar) => setFocus({ kind: "score", value: Number(bar?.activePayload?.[0]?.payload?.score) })} />
+                </AreaChart>
               </ResponsiveContainer>
             </ChartBox>
           )}
@@ -224,18 +243,24 @@ export default function AnalyticsPage() {
             </ResponsiveContainer>
           </ChartBox>
         </Panel>
+
+        <Panel title="Live Threat Vector Matrix (Radar)">
+          <ChartBox height={250}>
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
+                <PolarGrid stroke="#1c2740" />
+                <PolarAngleAxis dataKey="subject" tick={{ fill: '#38bdf8', fontSize: 10 }} />
+                <PolarRadiusAxis angle={30} domain={[0, 'auto']} tick={false} axisLine={false} />
+                <Radar name="Anomalies" dataKey="A" stroke="#3ee0c5" fill="#3ee0c5" fillOpacity={0.4} />
+                <Tooltip content={<Tip />} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </ChartBox>
+          <p className="mt-2 text-[11px] text-slate-500 text-center">Multi-dimensional view of current attack vectors.</p>
+        </Panel>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="SurgeShield confusion">
-          <Matrix matrix={data?.confusion_surgeshield} positive="Block or step-up" onPick={(cell) => setFocus({ kind: "cell", value: `ss:${cell}` })} />
-        </Panel>
-        <Panel title="Static threshold confusion">
-          <Matrix matrix={data?.confusion_static} positive="Block" onPick={(cell) => setFocus({ kind: "cell", value: `st:${cell}` })} />
-        </Panel>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <Panel title="Cost waterfall (rupees)">
           <ChartBox>
             <ResponsiveContainer width="100%" height="100%">
@@ -271,26 +296,31 @@ export default function AnalyticsPage() {
           </ChartBox>
           <p className="text-xs text-slate-500">Counts from this live run. OTP is a step-up, not a measured customer reply.</p>
         </Panel>
-      </div>
-
-      <Panel title="Latency histogram">
+        <Panel title="Latency histogram">
         {!latency.some((bin) => bin.count) ? (
           <EmptyState title="No latency samples yet" detail="Scores fill this as soon as a scenario or an upload runs." />
         ) : (
           <ChartBox height={180}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={latency}>
+              <AreaChart data={latency}>
+                <defs>
+                  <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.5}/>
+                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid stroke={GRID} vertical={false} />
-                <XAxis dataKey="ms" tick={tick} stroke="#64748b" label={{ value: "ms", fill: "#64748b", fontSize: 11 }} />
+                <XAxis dataKey="ms" tick={tick} stroke="#64748b" label={{ value: "ms", fill: "#64748b", fontSize: 11, position: 'insideBottomRight', offset: -5 }} />
                 <YAxis tick={tick} stroke="#64748b" width={32} allowDecimals={false} />
                 <Tooltip content={<Tip />} />
-                <Bar dataKey="count" name="Payments" fill="#fbbf24" radius={[3, 3, 0, 0]} />
-              </BarChart>
+                <Area type="monotone" dataKey="count" name="Payments" stroke="#38bdf8" strokeWidth={2} fillOpacity={1} fill="url(#colorLatency)" />
+              </AreaChart>
             </ResponsiveContainer>
           </ChartBox>
         )}
         <p className="text-xs text-slate-500">Bars are 1 ms wide. The live SLO is 25 ms.</p>
       </Panel>
+      </div>
 
       <Panel
         title="Red team replay"
@@ -419,19 +449,25 @@ function cellMatch(row, token) {
 function Matrix({ matrix, positive, onPick }) {
   const cells = matrix || { tp: 0, fp: 0, tn: 0, fn: 0 };
   const items = [
-    ["True positive", cells.tp, "text-ok", "tp"],
-    ["False positive", cells.fp, "text-ember", "fp"],
-    ["False negative", cells.fn, "text-amber", "fn"],
-    ["True negative", cells.tn, "text-slate-200", "tn"],
+    ["True positive", cells.tp, "text-ok border-ok/30 bg-ok/10 hover:bg-ok/20", "tp", CheckCircle2],
+    ["False positive", cells.fp, "text-ember border-ember/30 bg-ember/10 hover:bg-ember/20", "fp", ShieldAlert],
+    ["False negative", cells.fn, "text-amber border-amber/30 bg-amber/10 hover:bg-amber/20", "fn", Activity],
+    ["True negative", cells.tn, "text-slate-200 border-white/10 bg-white/5 hover:bg-white/10", "tn", XOctagon],
   ];
   return (
     <div>
-      <p className="mb-2 text-xs text-slate-500">Positive class: {positive}. Counts use simulator ground truth only.</p>
-      <div className="grid grid-cols-2 gap-2">
-        {items.map(([label, value, tone, cell]) => (
-          <button key={label} type="button" className="panel-raised p-3 text-left" onClick={() => onPick?.(cell)}>
-            <p className="text-[11px] uppercase text-slate-500">{label}</p>
-            <p className={`num text-2xl ${tone}`}>{value}</p>
+      <p className="mb-3 text-[11px] text-slate-400 font-medium">Positive class: <span className="text-slate-200">{positive}</span>. Evaluation uses strict simulator ground truth.</p>
+      <div className="grid grid-cols-2 gap-3">
+        {items.map(([label, value, tone, cell, Icon]) => (
+          <button key={label} type="button" className={`relative overflow-hidden p-4 text-left rounded-xl border transition-all duration-300 ${tone}`} onClick={() => onPick?.(cell)}>
+            <div className="flex justify-between items-start mb-2">
+              <p className="text-[10px] uppercase font-bold tracking-widest opacity-80">{label}</p>
+              <Icon className="w-4 h-4 opacity-50" />
+            </div>
+            <p className="num text-3xl font-black tracking-tight">{value}</p>
+            <div className="absolute -right-4 -bottom-4 opacity-10">
+              <Icon className="w-20 h-20" />
+            </div>
           </button>
         ))}
       </div>

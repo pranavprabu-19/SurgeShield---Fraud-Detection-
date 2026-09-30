@@ -72,12 +72,132 @@ function escapeHtml(value) {
 function exportFileReport({ name, scored, summary, truncated, reasons, gaps }) {
   const popup = window.open("", "_blank");
   if (!popup) return;
-  const features = (reasons || []).map((row) => `<li><strong>${escapeHtml(row.feature)}</strong> ${Number(row.count).toLocaleString("en-IN")}. ${escapeHtml(FEATURE_MEANING[row.feature] || row.feature)}</li>`).join("") || "<li>No detector fired. Decisions came from the champion score alone.</li>";
-  const missing = gaps.map((line) => `<li>${escapeHtml(line)}</li>`).join("") || "<li>None.</li>";
-  const steps = WORKFLOW.map((line) => `<li>${escapeHtml(line)}</li>`).join("");
-  popup.document.write(`<!doctype html><title>${escapeHtml(name)} report</title><body style="font-family:sans-serif;padding:32px;max-width:720px"><h1>File report</h1><p>${escapeHtml(name)} scored ${Number(scored).toLocaleString("en-IN")} rows${truncated ? ", stopped at 2,000" : ""}. Approve ${summary.APPROVE || 0}, step-up ${summary.STEP_UP || 0}, block ${summary.BLOCK || 0}.</p><h2>Features that fired</h2><ul>${features}</ul><h2>What this file cannot see</h2><ul>${missing}</ul><h2>Workflow</h2><ol>${steps}</ol></body>`);
+
+  const approve = summary.APPROVE || 0;
+  const stepUp = summary.STEP_UP || 0;
+  const block = summary.BLOCK || 0;
+  const total = Math.max(scored, 1);
+
+  const featuresHtml = (reasons || []).map((row) => `
+    <tr>
+      <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: 500; color: #e2e8f0;">${escapeHtml(row.feature)}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #94a3b8; font-variant-numeric: tabular-nums;">${Number(row.count).toLocaleString("en-IN")}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #94a3b8;">${Math.round((row.count / total) * 100)}%</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">${escapeHtml(FEATURE_MEANING[row.feature] || row.feature)}</td>
+    </tr>
+  `).join("") || "<tr><td colspan='4' style='padding: 12px; color: #64748b; text-align: center;'>No detector fired. Decisions came from the champion score alone.</td></tr>";
+
+  const missingHtml = gaps.map((line) => `<li style="margin-bottom: 8px;">${escapeHtml(line)}</li>`).join("") || "<li>None. Location, device, and label columns are all present.</li>";
+
+  popup.document.write(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(name)} - Analytics Report</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+
+    body { font-family: 'Inter', sans-serif; padding: 40px; color: #e2e8f0; max-width: 900px; margin: 0 auto; background-color: #0b1220; position: relative; }
+    body::before {
+      content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background-image: linear-gradient(rgba(62, 224, 197, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(62, 224, 197, 0.05) 1px, transparent 1px);
+      background-size: 20px 20px; z-index: -1; pointer-events: none;
+    }
+    .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #3ee0c5; padding-bottom: 20px; }
+    .title { font-size: 32px; font-weight: 800; color: #3ee0c5; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.1em; text-shadow: 0 0 10px rgba(62,224,197,0.5); }
+    .subtitle { font-size: 14px; color: #94a3b8; font-family: monospace; }
+    .card { background: rgba(30, 41, 59, 0.7); border-radius: 12px; padding: 24px; box-shadow: 0 0 20px rgba(0,0,0,0.5); margin-bottom: 32px; border: 1px solid rgba(62, 224, 197, 0.2); backdrop-filter: blur(10px); }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .kpi { padding: 16px; background: rgba(15, 23, 42, 0.8); border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.05); }
+    .kpi-value { font-size: 28px; font-weight: 700; font-family: monospace; }
+    .kpi-label { font-size: 10px; text-transform: uppercase; color: #94a3b8; margin-top: 6px; font-weight: 700; letter-spacing: 0.1em; }
+    .bar-chart { display: flex; height: 16px; border-radius: 4px; overflow: hidden; margin-top: 24px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); }
+    .bar { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #0b1220; font-weight: 700; }
+    .bar.approve { background: #3ee0c5; }
+    .bar.step-up { background: #fbbf24; }
+    .bar.block { background: #fb7185; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; text-align: left; background: rgba(15, 23, 42, 0.8); border-radius: 8px; overflow: hidden; }
+    th { padding: 14px; border-bottom: 1px solid rgba(62,224,197,0.3); font-weight: 700; color: #3ee0c5; text-transform: uppercase; font-size: 11px; letter-spacing: 0.1em; background: rgba(30,41,59,0.9); }
+    td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #cbd5e1; font-size: 13px; font-family: monospace; }
+    tr:hover { background: rgba(62,224,197,0.05); }
+    h2 { font-size: 14px; font-weight: 700; color: #3ee0c5; margin-top: 0; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 0.1em; display: flex; align-items: center; gap: 8px; }
+    h2::before { content: "■"; color: #fbbf24; }
+    .footer { text-align: center; margin-top: 60px; font-size: 11px; font-family: monospace; color: #64748b; border-top: 1px solid rgba(62,224,197,0.2); padding-top: 24px; }
+    @media print {
+      body { background-color: #0b1220 !important; -webkit-print-color-adjust: exact; color-adjust: exact; }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">File Analytics Report</div>
+    <div class="subtitle">Detailed analysis of ${escapeHtml(name)}</div>
+  </div>
+
+  <div class="card">
+    <h2>Overview</h2>
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-value" style="color: #3b82f6;">${Number(scored).toLocaleString("en-IN")}</div>
+        <div class="kpi-label">Rows Scored</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value" style="color: #10b981;">${approve.toLocaleString("en-IN")}</div>
+        <div class="kpi-label">Approved</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value" style="color: #f59e0b;">${stepUp.toLocaleString("en-IN")}</div>
+        <div class="kpi-label">Step-Up</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-value" style="color: #ef4444;">${block.toLocaleString("en-IN")}</div>
+        <div class="kpi-label">Blocked</div>
+      </div>
+    </div>
+    
+    <div style="font-size: 14px; color: #64748b; text-align: center; margin-bottom: 8px;">Decision Distribution</div>
+    <div class="bar-chart">
+      ${approve > 0 ? `<div class="bar approve" style="width: ${(approve / total) * 100}%" title="Approve"></div>` : ''}
+      ${stepUp > 0 ? `<div class="bar step-up" style="width: ${(stepUp / total) * 100}%" title="Step-Up"></div>` : ''}
+      ${block > 0 ? `<div class="bar block" style="width: ${(block / total) * 100}%" title="Block"></div>` : ''}
+    </div>
+    <div style="display: flex; justify-content: space-between; font-size: 12px; color: #64748b; margin-top: 8px; font-weight: 500;">
+      <span style="color: #10b981;">${Math.round((approve/total)*100)}% Approved</span>
+      <span style="color: #f59e0b;">${Math.round((stepUp/total)*100)}% Step-Up</span>
+      <span style="color: #ef4444;">${Math.round((block/total)*100)}% Blocked</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Identified Anomalies & Features</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Signal Name</th>
+          <th>Occurrences</th>
+          <th>% of Traffic</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${featuresHtml}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Data Quality & Gaps</h2>
+    <ul>${missingHtml}</ul>
+  </div>
+
+  <div class="footer">
+    Generated by SurgeShield Analytics &bull; ${new Date().toLocaleString()} &bull; ${truncated ? "Processing was truncated to 2,000 rows." : "Full file processed."}
+  </div>
+</body>
+</html>`);
   popup.document.close();
-  popup.print();
+  setTimeout(() => popup.print(), 500);
 }
 
 function ScoreTip({ active, payload }) {
