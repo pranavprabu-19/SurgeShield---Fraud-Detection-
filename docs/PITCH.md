@@ -1,5 +1,7 @@
 # Pitch (about 5 minutes)
 
+**Yuva Megathon 2026 — 1st place, Smart Systems Track** (IET, SRM Tiruchirappalli, 28–30 September 2026). Certificate: [docs/awards/yuva-megathon-2026-first-place.jpg](awards/yuva-megathon-2026-first-place.jpg).
+
 ## Problem statement
 
 How we tell a genuine flash-sale surge apart from a coordinated account drain, as it happens.

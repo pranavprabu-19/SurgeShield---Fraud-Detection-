@@ -1,5 +1,10 @@
 # SurgeShield
 
+**1st place — Smart Systems Track, Yuva Megathon 2026**  
+IET · SRM Institute of Science and Technology, Tiruchirappalli · 28–30 September 2026
+
+[![Certificate](docs/awards/yuva-megathon-2026-first-place.jpg)](docs/awards/yuva-megathon-2026-first-place.jpg)
+
 SurgeShield tells a genuine flash-sale surge apart from a coordinated account-draining attack, and it does it per transaction in milliseconds.
 
 The supplied data has `Time`, PCA components `V1`–`V28`, `Amount`, and `Class`. It does not have user, merchant, or location columns. The product says that out loud and builds context from the stream instead: rolling windows, behavioral segments, and a coordination detector.
